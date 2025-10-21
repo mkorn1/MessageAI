@@ -67,7 +67,9 @@ service cloud.firestore {
         resource.data.keys().hasAll(['id', 'type', 'participants', 'createdBy', 'createdAt', 'updatedAt']) &&
         resource.data.type in ['direct', 'group', 'channel'] &&
         resource.data.participants is list &&
-        resource.data.participants.size() >= 2; // Minimum 2 participants
+        // Direct chats need exactly 2 participants, group/channel chats need at least 1
+        (resource.data.type == 'direct' && resource.data.participants.size() == 2) ||
+        (resource.data.type in ['group', 'channel'] && resource.data.participants.size() >= 1);
       
       // Chat admins can update chat settings
       allow update: if request.auth != null && 

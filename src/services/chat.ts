@@ -41,9 +41,27 @@ class ChatService {
       }
 
       // Create chat document
-      const chatRef = doc(collection(db, this.CHATS_COLLECTION));
+      console.log('🔥 Adding chat to Firestore...');
+      const chatDocRef = await addDoc(collection(db, this.CHATS_COLLECTION), {
+        ...chatData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        allowMemberInvites: chatData.allowMemberInvites ?? true,
+        allowMemberMessages: chatData.allowMemberMessages ?? true,
+        allowFileSharing: chatData.allowFileSharing ?? true,
+        isArchived: false,
+        isMuted: false,
+        notificationSettings: chatData.notificationSettings ?? {
+          soundEnabled: true,
+          vibrationEnabled: true
+        }
+      });
+
+      console.log('✅ Chat added to Firestore successfully with ID:', chatDocRef.id);
+
+      // Create the chat object with the actual document ID
       const chat: Chat = {
-        id: chatRef.id,
+        id: chatDocRef.id,
         ...chatData,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -58,17 +76,7 @@ class ChatService {
         }
       };
 
-      console.log('📝 Created chat object:', chat);
-
-      // Add to Firestore
-      console.log('🔥 Adding chat to Firestore...');
-      await addDoc(collection(db, this.CHATS_COLLECTION), {
-        ...chat,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      console.log('✅ Chat added to Firestore successfully');
+      console.log('📝 Created chat object with correct ID:', chat);
 
       return {
         success: true,
@@ -101,8 +109,11 @@ class ChatService {
    */
   async getChat(chatId: string): Promise<Result<Chat>> {
     try {
+      console.log('🔍 ChatService.getChat called with chatId:', chatId);
       const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
+      console.log('🔍 Chat reference created:', chatRef.path);
       const chatDoc = await getDoc(chatRef);
+      console.log('🔍 Chat document exists:', chatDoc.exists());
 
       if (!chatDoc.exists()) {
         return {
@@ -432,14 +443,28 @@ class ChatService {
       };
     }
 
-    if (!chatData.participants || chatData.participants.length < 2) {
+    if (!chatData.participants || chatData.participants.length < 1) {
       return {
         success: false,
         error: createError<FirebaseError>({
           type: 'firebase',
           service: 'firestore',
           code: 'invalid-argument',
-          message: 'Chat must have at least 2 participants'
+          message: 'Chat must have at least 1 participant'
+        }),
+        retryable: false
+      };
+    }
+
+    // For direct chats, require exactly 2 participants
+    if (chatData.type === ChatType.DIRECT && chatData.participants.length !== 2) {
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: 'invalid-argument',
+          message: 'Direct chat must have exactly 2 participants'
         }),
         retryable: false
       };

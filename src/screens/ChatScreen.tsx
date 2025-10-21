@@ -30,6 +30,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
   onBack,
   onChatSettings
 }) => {
+  // Debug: Log the chatId being received
+  React.useEffect(() => {
+    console.log('🔍 ChatScreen received chatId:', chatId);
+    console.log('🔍 ChatScreen received chat object:', chat);
+  }, [chatId, chat]);
+
   // Use the custom hook for message management
   const {
     messages,

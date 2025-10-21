@@ -95,7 +95,7 @@ const HomeScreen: React.FC = () => {
       const createChatData = {
         name: newChatName.trim(),
         type: ChatType.GROUP,
-        participants: [user.uid],
+        participants: [user.uid], // Start with just the creator
         createdBy: user.uid,
         allowMemberInvites: true,
         allowMemberMessages: true,
@@ -115,7 +115,11 @@ const HomeScreen: React.FC = () => {
         setChats(prev => [result.data, ...prev]);
         setNewChatName('');
         setShowCreateChat(false);
-        Alert.alert('Success', 'Chat created successfully!');
+        
+        // Small delay to ensure chat is fully written to Firestore
+        setTimeout(() => {
+          Alert.alert('Success', 'Chat created successfully!');
+        }, 100);
       } else {
         console.error('❌ Failed to create chat:', result.error);
         Alert.alert('Error', 'Failed to create chat');

@@ -115,9 +115,16 @@ export const useMessages = ({
               });
               
               // Add optimistic messages only if they don't exist in server messages
-              optimisticMessages.forEach(msg => {
-                if (!messageMap.has(msg.id)) {
-                  messageMap.set(msg.id, msg);
+              // Check both by ID and by content/timestamp to avoid duplicates
+              optimisticMessages.forEach(optMsg => {
+                const isDuplicate = serverMessages.some(serverMsg => 
+                  serverMsg.text === optMsg.text && 
+                  serverMsg.senderId === optMsg.senderId &&
+                  Math.abs(serverMsg.timestamp.getTime() - optMsg.timestamp.getTime()) < 5000 // Within 5 seconds
+                );
+                
+                if (!isDuplicate && !messageMap.has(optMsg.id)) {
+                  messageMap.set(optMsg.id, optMsg);
                 }
               });
               

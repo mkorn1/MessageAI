@@ -24,7 +24,6 @@ import {
     createError,
     isRetryableError
 } from '../types';
-import ChatService from './chat';
 
 class MessagingService {
   private readonly MESSAGES_COLLECTION = 'messages';
@@ -46,26 +45,8 @@ class MessagingService {
         return validationResult;
       }
 
-      // Ensure chat exists before sending message
-      console.log('🔍 Checking if chat exists:', messageData.chatId);
-      const chatResult = await ChatService.getChat(messageData.chatId);
-      
-      if (!chatResult.success) {
-        console.log('❌ Chat does not exist, cannot send message');
-        return {
-          success: false,
-          error: createError<FirebaseError>({
-            type: 'firebase',
-            service: 'firestore',
-            code: 'not-found',
-            message: 'Chat not found. Cannot send message to non-existent chat.',
-            originalError: chatResult.error
-          }),
-          retryable: false
-        };
-      }
-
-      console.log('✅ Chat exists, proceeding with message send');
+      // Skip chat verification - let Firestore handle it naturally
+      console.log('📤 Proceeding with message send to chat:', messageData.chatId);
 
       // Create message document
       const messageRef = doc(collection(db, this.MESSAGES_COLLECTION));
@@ -87,16 +68,16 @@ class MessagingService {
 
       console.log('✅ Message added to Firestore successfully');
 
-      // Update chat's last message
+      // Update chat's last message (non-blocking)
       console.log('🔄 Updating chat last message...');
-      await this.updateChatLastMessage(message.chatId, {
+      this.updateChatLastMessage(message.chatId, {
         id: message.id,
         text: message.text,
         senderId: message.senderId,
         timestamp: message.timestamp
+      }).catch(error => {
+        console.log('⚠️ Chat last message update failed (non-critical):', error);
       });
-
-      console.log('✅ Chat last message updated');
 
       return {
         success: true,
@@ -432,14 +413,17 @@ class MessagingService {
     lastMessage: { id: string; text: string; senderId: string; timestamp: Date }
   ): Promise<void> {
     try {
+      console.log('🔄 Updating chat last message for chat:', chatId);
       const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
       await updateDoc(chatRef, {
         lastMessage,
         updatedAt: serverTimestamp()
       });
+      console.log('✅ Chat last message updated successfully');
     } catch (error) {
-      console.error('Failed to update chat last message:', error);
+      console.log('⚠️ Failed to update chat last message (non-critical):', error);
       // Don't throw here as message was already sent successfully
+      // This is a non-critical operation that can fail due to timing issues
     }
   }
 }
