@@ -1,6 +1,7 @@
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     getDoc,
     getDocs,
@@ -381,6 +382,202 @@ class ChatService {
           service: 'firestore',
           code: error.code || 'unknown',
           message: error.message || 'Failed to update chat'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Delete a chat
+   */
+  async deleteChat(chatId: string): Promise<Result<void>> {
+    try {
+      console.log('🗑️ ChatService.deleteChat called for chatId:', chatId);
+      
+      // First, verify the chat exists and user has permission
+      const chatResult = await this.getChat(chatId);
+      if (!chatResult.success) {
+        return {
+          success: false,
+          error: chatResult.error,
+          retryable: chatResult.retryable
+        };
+      }
+
+      // Delete the chat document
+      const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
+      await deleteDoc(chatRef);
+
+      console.log('✅ Chat deleted successfully:', chatId);
+      return {
+        success: true,
+        data: undefined
+      };
+
+    } catch (error: any) {
+      console.error('💥 Error in ChatService.deleteChat:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to delete chat',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to delete chat'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Add members to a chat
+   */
+  async addMembers(chatId: string, memberIds: string[]): Promise<Result<void>> {
+    try {
+      console.log('👥 ChatService.addMembers called for chatId:', chatId, 'members:', memberIds);
+      
+      // First, get the current chat
+      const chatResult = await this.getChat(chatId);
+      if (!chatResult.success) {
+        return {
+          success: false,
+          error: chatResult.error,
+          retryable: chatResult.retryable
+        };
+      }
+
+      const chat = chatResult.data;
+      
+      // Check if chat allows member invites
+      if (!chat.allowMemberInvites) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'permission-denied',
+            message: 'This chat does not allow member invites'
+          }),
+          retryable: false
+        };
+      }
+
+      // Add new members to existing participants (avoid duplicates)
+      const currentParticipants = chat.participants || [];
+      const newParticipants = [...currentParticipants];
+      
+      memberIds.forEach(memberId => {
+        if (!newParticipants.includes(memberId)) {
+          newParticipants.push(memberId);
+        }
+      });
+
+      // Update the chat with new participants
+      const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
+      await updateDoc(chatRef, {
+        participants: newParticipants,
+        updatedAt: serverTimestamp()
+      });
+
+      console.log('✅ Members added successfully to chat:', chatId);
+      return {
+        success: true,
+        data: undefined
+      };
+
+    } catch (error: any) {
+      console.error('💥 Error in ChatService.addMembers:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to add members',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to add members'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Remove a member from a chat
+   */
+  async removeMember(chatId: string, memberId: string): Promise<Result<void>> {
+    try {
+      console.log('👋 ChatService.removeMember called for chatId:', chatId, 'memberId:', memberId);
+      
+      // First, get the current chat
+      const chatResult = await this.getChat(chatId);
+      if (!chatResult.success) {
+        return {
+          success: false,
+          error: chatResult.error,
+          retryable: chatResult.retryable
+        };
+      }
+
+      const chat = chatResult.data;
+      const currentParticipants = chat.participants || [];
+      
+      // Remove the member from participants
+      const newParticipants = currentParticipants.filter(id => id !== memberId);
+      
+      // Ensure we don't remove all participants
+      if (newParticipants.length === 0) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'invalid-argument',
+            message: 'Cannot remove all participants from a chat'
+          }),
+          retryable: false
+        };
+      }
+
+      // Update the chat with new participants
+      const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
+      await updateDoc(chatRef, {
+        participants: newParticipants,
+        updatedAt: serverTimestamp()
+      });
+
+      console.log('✅ Member removed successfully from chat:', chatId);
+      return {
+        success: true,
+        data: undefined
+      };
+
+    } catch (error: any) {
+      console.error('💥 Error in ChatService.removeMember:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to remove member',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to remove member'
         }))
       };
     }

@@ -1,4 +1,5 @@
-import React, { useCallback } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -15,6 +16,7 @@ import MessageInput from '../components/MessageInput';
 import MessageList from '../components/MessageList';
 import useMessages from '../hooks/useMessages';
 import AuthService from '../services/auth';
+import ChatService from '../services/chat';
 import { Chat, Message, MessageType } from '../types';
 
 interface ChatScreenProps {
@@ -30,11 +32,46 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
   onBack,
   onChatSettings
 }) => {
+  const router = useRouter();
+  const [chatData, setChatData] = useState<Chat | null>(chat || null);
+  const [isLoadingChat, setIsLoadingChat] = useState(!chat);
+
+  // Load chat data if not provided
+  useEffect(() => {
+    const loadChatData = async () => {
+      if (chat) {
+        setChatData(chat);
+        return;
+      }
+
+      try {
+        setIsLoadingChat(true);
+        console.log('🔍 Loading chat data for chatId:', chatId);
+        
+        const result = await ChatService.getChat(chatId);
+        
+        if (result.success) {
+          console.log('✅ Chat data loaded:', result.data);
+          setChatData(result.data);
+        } else {
+          console.error('❌ Failed to load chat data:', result.error);
+        }
+      } catch (error) {
+        console.error('💥 Error loading chat data:', error);
+      } finally {
+        setIsLoadingChat(false);
+      }
+    };
+
+    loadChatData();
+  }, [chatId, chat]);
+
   // Debug: Log the chatId being received
   React.useEffect(() => {
     console.log('🔍 ChatScreen received chatId:', chatId);
     console.log('🔍 ChatScreen received chat object:', chat);
-  }, [chatId, chat]);
+    console.log('🔍 ChatScreen chatData state:', chatData);
+  }, [chatId, chat, chatData]);
 
   // Use the custom hook for message management
   const {
@@ -159,10 +196,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
 
   // Get chat display name
   const getChatDisplayName = useCallback(() => {
-    if (chat?.name) return chat.name;
-    if (chat?.type === 'direct') return 'Direct Message';
+    if (chatData?.name) return chatData.name;
+    if (chatData?.type === 'direct') return 'Direct Message';
     return 'Group Chat';
-  }, [chat]);
+  }, [chatData]);
 
   // Error state
   if (error && messages.length === 0) {
@@ -191,11 +228,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
         <View style={styles.headerInfo}>
           <Text style={styles.chatName}>{getChatDisplayName()}</Text>
           <Text style={styles.participantCount}>
-            {chat?.participants.length || 0} participants
+            {chatData?.participants?.length || 0} participants
           </Text>
         </View>
         
-        <TouchableOpacity style={styles.settingsButton} onPress={onChatSettings}>
+        <TouchableOpacity 
+          style={styles.settingsButton} 
+          onPress={() => {
+            if (onChatSettings) {
+              onChatSettings();
+            } else {
+              // Default behavior - navigate to chat settings
+              router.push(`/chat-settings?chatId=${chatId}`);
+            }
+          }}
+        >
           <Text style={styles.settingsButtonText}>⚙️</Text>
         </TouchableOpacity>
       </View>

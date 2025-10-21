@@ -4,6 +4,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    RefreshControl,
     SafeAreaView,
     StyleSheet,
     Text,
@@ -11,8 +12,17 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+} from 'react-native-reanimated';
+import MemberSelection from '../components/MemberSelection';
 import { useAuth } from '../contexts/AuthContext';
 import ChatService from '../services/chat';
+import { User } from '../services/user';
 import { Chat, ChatType } from '../types';
 
 
@@ -21,8 +31,11 @@ const HomeScreen: React.FC = () => {
   const router = useRouter();
   const [chats, setChats] = useState<Chat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [newChatName, setNewChatName] = useState('');
   const [showCreateChat, setShowCreateChat] = useState(false);
+  const [showMemberSelection, setShowMemberSelection] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
 
 
   // Load chats from Firestore
@@ -77,6 +90,26 @@ const HomeScreen: React.FC = () => {
     loadChats();
   }, [loadChats]);
 
+  // Handle pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadChats();
+    setIsRefreshing(false);
+  }, [loadChats]);
+
+  // Handle member selection
+  const handleMembersSelected = useCallback((members: User[]) => {
+    setSelectedMembers(members);
+    setShowMemberSelection(false);
+    setShowCreateChat(true);
+  }, []);
+
+  // Handle member selection cancel
+  const handleMemberSelectionCancel = useCallback(() => {
+    setShowMemberSelection(false);
+    setSelectedMembers([]);
+  }, []);
+
   // Create new chat
   const handleCreateChat = useCallback(async () => {
     if (!newChatName.trim()) {
@@ -92,10 +125,13 @@ const HomeScreen: React.FC = () => {
     try {
       console.log('🏗️ Creating new chat:', newChatName.trim());
       
+      // Include selected members in participants
+      const participantIds = [user.uid, ...selectedMembers.map(member => member.uid)];
+      
       const createChatData = {
         name: newChatName.trim(),
         type: ChatType.GROUP,
-        participants: [user.uid], // Start with just the creator
+        participants: participantIds,
         createdBy: user.uid,
         allowMemberInvites: true,
         allowMemberMessages: true,
@@ -115,11 +151,10 @@ const HomeScreen: React.FC = () => {
         setChats(prev => [result.data, ...prev]);
         setNewChatName('');
         setShowCreateChat(false);
+        setSelectedMembers([]);
         
-        // Small delay to ensure chat is fully written to Firestore
-        setTimeout(() => {
-          Alert.alert('Success', 'Chat created successfully!');
-        }, 100);
+        // Navigate directly to chat window on success
+        router.push(`/chat?chatId=${result.data.id}`);
       } else {
         console.error('❌ Failed to create chat:', result.error);
         Alert.alert('Error', 'Failed to create chat');
@@ -128,7 +163,7 @@ const HomeScreen: React.FC = () => {
       console.error('💥 Error creating chat:', error);
       Alert.alert('Error', 'Failed to create chat');
     }
-  }, [newChatName, user?.uid]);
+  }, [newChatName, user?.uid, selectedMembers, router]);
 
   // Enter chat
   const handleEnterChat = useCallback((chatId: string) => {
@@ -171,8 +206,90 @@ const HomeScreen: React.FC = () => {
     return `${days}d ago`;
   };
 
-  // Render chat item
-  const renderChatItem = ({ item }: { item: Chat }) => {
+  // Handle delete chat
+  const handleDeleteChat = useCallback(async (chatId: string) => {
+    Alert.alert(
+      'Delete Chat',
+      'Are you sure you want to delete this chat? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await ChatService.deleteChat(chatId);
+              
+              if (result.success) {
+                setChats(prev => prev.filter(chat => chat.id !== chatId));
+                Alert.alert('Success', 'Chat deleted successfully');
+              } else {
+                console.error('Failed to delete chat:', result.error);
+                Alert.alert('Error', 'Failed to delete chat');
+              }
+            } catch (error) {
+              console.error('Error deleting chat:', error);
+              Alert.alert('Error', 'Failed to delete chat');
+            }
+          }
+        }
+      ]
+    );
+  }, []);
+
+  // Swipeable Chat Item Component
+  const SwipeableChatItem = ({ item }: { item: Chat }) => {
+    const translateX = useSharedValue(0);
+    const [isSwipeOpen, setIsSwipeOpen] = useState(false);
+
+    const panGesture = Gesture.Pan()
+      .onUpdate((event) => {
+        // Only allow left swipe (negative translation)
+        if (event.translationX < 0) {
+          translateX.value = Math.max(event.translationX, -80);
+        }
+      })
+      .onEnd((event) => {
+        if (event.translationX < -40) {
+          // Open delete action
+          translateX.value = withSpring(-80);
+          runOnJS(setIsSwipeOpen)(true);
+        } else {
+          // Close delete action
+          translateX.value = withSpring(0);
+          runOnJS(setIsSwipeOpen)(false);
+        }
+      });
+
+    const animatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ translateX: translateX.value }],
+      };
+    });
+
+    const deleteAnimatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ translateX: translateX.value + 80 }],
+      };
+    });
+
+    const handlePress = () => {
+      if (isSwipeOpen) {
+        // Close swipe if open
+        translateX.value = withSpring(0);
+        setIsSwipeOpen(false);
+      } else {
+        // Enter chat
+        handleEnterChat(item.id);
+      }
+    };
+
+    const handleDelete = () => {
+      translateX.value = withSpring(0);
+      setIsSwipeOpen(false);
+      handleDeleteChat(item.id);
+    };
+
     // Get display name with fallback
     const getDisplayName = () => {
       if (item.name && item.name.trim()) {
@@ -188,54 +305,83 @@ const HomeScreen: React.FC = () => {
     const avatarText = displayName.charAt(0).toUpperCase();
 
     return (
-      <TouchableOpacity
-        style={styles.chatItem}
-        onPress={() => handleEnterChat(item.id)}
-      >
-        <View style={styles.chatAvatar}>
-          <Text style={styles.chatAvatarText}>
-            {avatarText}
-          </Text>
-        </View>
-        
-        <View style={styles.chatContent}>
-          <View style={styles.chatHeader}>
-            <Text style={styles.chatName}>{displayName}</Text>
-            {item.lastMessage && (
-              <Text style={styles.chatTimestamp}>
-                {formatTimestamp(item.lastMessage.timestamp)}
-              </Text>
-            )}
-          </View>
-          
-          <View style={styles.chatFooter}>
-            <Text style={styles.chatLastMessage} numberOfLines={1}>
-              {item.lastMessage?.text || 'No messages yet'}
-            </Text>
-            {item.unreadCount && item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>{item.unreadCount}</Text>
+      <View style={styles.swipeableContainer}>
+        {/* Delete Action Background */}
+        <Animated.View style={[styles.deleteAction, deleteAnimatedStyle]}>
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+            <Text style={styles.deleteButtonText}>🗑️</Text>
+            <Text style={styles.deleteButtonLabel}>Delete</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Chat Item */}
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={animatedStyle}>
+            <TouchableOpacity
+              style={styles.chatItem}
+              onPress={handlePress}
+            >
+              <View style={styles.chatAvatar}>
+                <Text style={styles.chatAvatarText}>
+                  {avatarText}
+                </Text>
               </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
+              
+              <View style={styles.chatContent}>
+                <View style={styles.chatHeader}>
+                  <Text style={styles.chatName}>{displayName}</Text>
+                  {item.lastMessage && (
+                    <Text style={styles.chatTimestamp}>
+                      {formatTimestamp(item.lastMessage.timestamp)}
+                    </Text>
+                  )}
+                </View>
+                
+                <View style={styles.chatSubheader}>
+                  <Text style={styles.participantCount}>
+                    {item.participants?.length || 0} participants
+                  </Text>
+                </View>
+                
+                <View style={styles.chatFooter}>
+                  <Text style={styles.chatLastMessage} numberOfLines={1}>
+                    {item.lastMessage?.text || 'No messages yet'}
+                  </Text>
+                  {item.unreadCount && item.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        </GestureDetector>
+      </View>
     );
+  };
+
+  // Render chat item
+  const renderChatItem = ({ item }: { item: Chat }) => {
+    return <SwipeableChatItem item={item} />;
   };
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Loading chats...</Text>
-        </View>
-      </SafeAreaView>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={styles.loadingText}>Loading chats...</Text>
+          </View>
+        </SafeAreaView>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -292,7 +438,7 @@ const HomeScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.newChatButton}
-              onPress={() => setShowCreateChat(true)}
+              onPress={() => setShowMemberSelection(true)}
             >
               <Text style={styles.newChatButtonText}>+ New Chat</Text>
             </TouchableOpacity>
@@ -307,7 +453,7 @@ const HomeScreen: React.FC = () => {
             </Text>
             <TouchableOpacity
               style={styles.emptyStateButton}
-              onPress={() => setShowCreateChat(true)}
+              onPress={() => setShowMemberSelection(true)}
             >
               <Text style={styles.emptyStateButtonText}>Create Chat</Text>
             </TouchableOpacity>
@@ -318,10 +464,31 @@ const HomeScreen: React.FC = () => {
             keyExtractor={(item) => item.id}
             renderItem={renderChatItem}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                colors={['#007AFF']}
+                tintColor="#007AFF"
+              />
+            }
           />
         )}
       </View>
-    </SafeAreaView>
+
+      {/* Member Selection Modal */}
+      {showMemberSelection && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <MemberSelection
+              onMembersSelected={handleMembersSelected}
+              onCancel={handleMemberSelectionCancel}
+            />
+          </View>
+        </View>
+      )}
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 };
 
@@ -522,7 +689,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   chatName: {
     fontSize: 16,
@@ -533,6 +700,14 @@ const styles = StyleSheet.create({
   chatTimestamp: {
     fontSize: 12,
     color: '#8E8E93',
+  },
+  chatSubheader: {
+    marginBottom: 4,
+  },
+  participantCount: {
+    fontSize: 12,
+    color: '#8E8E93',
+    fontWeight: '400',
   },
   chatFooter: {
     flexDirection: 'row',
@@ -557,6 +732,51 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+  },
+  swipeableContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  deleteAction: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 80,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  deleteButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  deleteButtonLabel: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    height: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
 });
 
