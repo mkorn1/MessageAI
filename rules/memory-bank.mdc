@@ -1,0 +1,44 @@
+---
+description: Memory Bank system for maintaining project context across AI sessions
+globs: memory-bank/**/*.md
+---
+
+# Memory Bank System
+
+## Overview
+The Memory Bank is a comprehensive documentation system that maintains project context across AI sessions. It consists of six core files that build upon each other in a clear hierarchy.
+
+## Core Files Structure
+```
+memory-bank/
+├── projectbrief.md      # Foundation - core requirements and goals
+├── productContext.md    # Why project exists, problems it solves
+├── systemPatterns.md    # Architecture, technical decisions, patterns
+├── techContext.md       # Technologies, setup, constraints
+├── activeContext.md     # Current work focus, recent changes
+└── progress.md          # What works, what's left, current status
+```
+
+## Usage Protocol
+1. **Read ALL Memory Bank files** at the start of every task
+2. **Update Memory Bank** when discovering new patterns or after significant changes
+3. **Focus on activeContext.md and progress.md** for current state tracking
+4. **Use projectbrief.md** as source of truth for project scope
+
+## File Relationships
+- `projectbrief.md` → Foundation for all other files
+- `productContext.md` + `systemPatterns.md` + `techContext.md` → Inform `activeContext.md`
+- `activeContext.md` → Drives `progress.md` updates
+- All files → Support decision making and context continuity
+
+## Update Triggers
+- Discovering new project patterns
+- After implementing significant changes
+- User requests with "update memory bank"
+- When context needs clarification
+
+## Key Benefits
+- **Session Continuity:** AI maintains context across resets
+- **Decision Tracking:** Document why choices were made
+- **Progress Visibility:** Clear status of what's complete vs. remaining
+- **Pattern Recognition:** Capture reusable approaches and solutions

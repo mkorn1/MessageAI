@@ -1,0 +1,120 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is participant in a chat
+    function isChatParticipant(chatId) {
+      return exists(/databases/$(database)/documents/chats/$(chatId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+    
+    // Helper function to check if user is chat admin
+    function isChatAdmin(chatId) {
+      return exists(/databases/$(database)/documents/chats/$(chatId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.admins;
+    }
+    
+    // Users can read and write their own user document
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Messages security rules
+    match /messages/{messageId} {
+      // Users can read messages from chats they participate in
+      allow read: if request.auth != null && 
+        isChatParticipant(resource.data.chatId);
+      
+      // Users can create messages in chats they participate in
+      allow create: if request.auth != null && 
+        request.auth.uid == resource.data.senderId &&
+        isChatParticipant(resource.data.chatId) &&
+        resource.data.keys().hasAll(['id', 'text', 'senderId', 'timestamp', 'chatId', 'messageType', 'status']) &&
+        resource.data.text is string &&
+        resource.data.text.size() > 0 &&
+        resource.data.text.size() <= 4000 && // Max message length
+        resource.data.senderId is string &&
+        resource.data.chatId is string &&
+        resource.data.messageType in ['text', 'image', 'file', 'system'] &&
+        resource.data.status in ['sending', 'sent', 'delivered', 'read', 'failed'];
+      
+      // Users can update their own messages (for status updates, edits)
+      allow update: if request.auth != null && 
+        (resource.data.senderId == request.auth.uid || 
+         isChatAdmin(resource.data.chatId)) &&
+        // Prevent changing senderId or chatId
+        resource.data.senderId == request.data.senderId &&
+        resource.data.chatId == request.data.chatId;
+      
+      // Users can delete their own messages (soft delete)
+      allow delete: if request.auth != null && 
+        (resource.data.senderId == request.auth.uid || 
+         isChatAdmin(resource.data.chatId));
+    }
+    
+    // Chats security rules
+    match /chats/{chatId} {
+      // Users can read chats they participate in
+      allow read: if request.auth != null && 
+        request.auth.uid in resource.data.participants;
+      
+      // Users can create chats (they become participants automatically)
+      allow create: if request.auth != null && 
+        request.auth.uid == resource.data.createdBy &&
+        request.auth.uid in resource.data.participants &&
+        resource.data.keys().hasAll(['id', 'type', 'participants', 'createdBy', 'createdAt', 'updatedAt']) &&
+        resource.data.type in ['direct', 'group', 'channel'] &&
+        resource.data.participants is list &&
+        resource.data.participants.size() >= 2; // Minimum 2 participants
+      
+      // Chat admins can update chat settings
+      allow update: if request.auth != null && 
+        (request.auth.uid in resource.data.admins || 
+         request.auth.uid == resource.data.createdBy) &&
+        // Prevent changing participants through this rule (use separate function)
+        resource.data.participants == request.data.participants;
+      
+      // Only chat creator can delete chats
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.createdBy;
+    }
+    
+    // Chat members collection (for detailed member management)
+    match /chats/{chatId}/members/{memberId} {
+      allow read: if request.auth != null && 
+        isChatParticipant(chatId);
+      
+      allow write: if request.auth != null && 
+        (isChatAdmin(chatId) || request.auth.uid == memberId);
+    }
+    
+    // Chat invitations
+    match /chatInvitations/{invitationId} {
+      allow read: if request.auth != null && 
+        (resource.data.invitedBy == request.auth.uid || 
+         resource.data.invitedUser == request.auth.uid);
+      
+      allow create: if request.auth != null && 
+        resource.data.invitedBy == request.auth.uid &&
+        isChatParticipant(resource.data.chatId);
+      
+      allow update: if request.auth != null && 
+        resource.data.invitedUser == request.auth.uid;
+    }
+    
+    // User contacts/friends
+    match /contacts/{contactId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.contactId == request.auth.uid);
+    }
+    
+    // System messages (for notifications, etc.)
+    match /systemMessages/{messageId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only server-side functions can write
+    }
+  }
+}
