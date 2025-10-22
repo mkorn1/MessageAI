@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -19,6 +20,7 @@ import useMessages from '../hooks/useMessages';
 import { usePresence } from '../hooks/usePresence';
 import AuthService from '../services/auth';
 import ChatService from '../services/chat';
+import MessagingService from '../services/messaging';
 import { Chat, Message, MessageType } from '../types';
 
 interface ChatScreenProps {
@@ -104,6 +106,98 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   });
 
+  // Mark messages as read when chat screen mounts or becomes active
+  React.useEffect(() => {
+    const markMessagesAsRead = async () => {
+      const currentUser = AuthService.getCurrentUser();
+      if (!currentUser?.uid || !chatId) {
+        return;
+      }
+
+      try {
+        console.log('📖 Marking messages as read for user:', currentUser.uid, 'in chat:', chatId);
+        const result = await MessagingService.markAllMessagesAsRead(chatId, currentUser.uid);
+        
+        if (result.success) {
+          console.log('✅ Successfully marked messages as read');
+        } else {
+          console.error('❌ Failed to mark messages as read:', result.error);
+        }
+      } catch (error) {
+        console.error('💥 Error marking messages as read:', error);
+      }
+    };
+
+    // Mark messages as read when component mounts
+    markMessagesAsRead();
+  }, [chatId]);
+
+  // Mark messages as read when messages are loaded or updated
+  React.useEffect(() => {
+    const markMessagesAsRead = async () => {
+      const currentUser = AuthService.getCurrentUser();
+      if (!currentUser?.uid || !chatId || !messages.length) {
+        return;
+      }
+
+      try {
+        // Get unread message IDs (messages not sent by current user, excluding optimistic messages)
+        const unreadMessageIds = messages
+          .filter(message => 
+            message.senderId !== currentUser.uid && 
+            !message.id.startsWith('temp_') // Exclude optimistic messages
+          )
+          .map(message => message.id);
+
+        if (unreadMessageIds.length === 0) {
+          return;
+        }
+
+        console.log('📖 Marking', unreadMessageIds.length, 'messages as read');
+        const result = await MessagingService.markMessagesAsRead(chatId, currentUser.uid, unreadMessageIds);
+        
+        if (result.success) {
+          console.log('✅ Successfully marked messages as read');
+        } else {
+          console.error('❌ Failed to mark messages as read:', result.error);
+        }
+      } catch (error) {
+        console.error('💥 Error marking messages as read:', error);
+      }
+    };
+
+    // Debounce read marking to prevent excessive calls
+    const timeoutId = setTimeout(markMessagesAsRead, 500);
+    return () => clearTimeout(timeoutId);
+  }, [chatId, messages]);
+
+  // Mark messages as read when screen becomes active (focus)
+  useFocusEffect(
+    useCallback(() => {
+      const markMessagesAsRead = async () => {
+        const currentUser = AuthService.getCurrentUser();
+        if (!currentUser?.uid || !chatId) {
+          return;
+        }
+
+        try {
+          console.log('📖 Screen focused - marking messages as read');
+          const result = await MessagingService.markAllMessagesAsRead(chatId, currentUser.uid);
+          
+          if (result.success) {
+            console.log('✅ Successfully marked messages as read on focus');
+          } else {
+            console.error('❌ Failed to mark messages as read on focus:', result.error);
+          }
+        } catch (error) {
+          console.error('💥 Error marking messages as read on focus:', error);
+        }
+      };
+
+      markMessagesAsRead();
+    }, [chatId])
+  );
+
   // Handle sending a message
   const handleSendMessage = useCallback(async (text: string, messageType: MessageType = MessageType.TEXT) => {
     console.log('📱 ChatScreen.handleSendMessage called with:', { text, messageType });
@@ -144,7 +238,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
                   { text: 'Cancel', style: 'cancel' },
                   { 
                     text: 'Save', 
-                    onPress: (newText) => {
+                    onPress: (newText?: string) => {
                       if (newText && newText.trim()) {
                         editMessage(message.id, newText.trim());
                       }
@@ -287,6 +381,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
             onMessagePress={handleMessagePress}
             onMessageLongPress={handleMessageLongPress}
             hasMoreMessages={hasMoreMessages}
+            totalParticipants={chatData?.participants.length || 0}
+            isGroupChat={chatData?.type === 'group'}
           />
         )}
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthService from '../services/auth';
 import MessagingService from '../services/messaging';
-import { AppError, Message, MessageStatus, MessageType } from '../types';
+import { AppError, Message, MessageType } from '../types';
 
 interface UseMessagesOptions {
   chatId: string;
@@ -55,6 +55,8 @@ export const useMessages = ({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const currentUserRef = useRef(AuthService.getCurrentUser());
+  const lastReadMarkTime = useRef<number>(0);
+  const READ_MARK_THROTTLE = 500; // 500ms throttle - more responsive for active conversations
   
   // Initialize messages and real-time listener
   useEffect(() => {
@@ -100,31 +102,49 @@ export const useMessages = ({
           chatId,
           (newMessages) => {
             console.log('🔄 Real-time listener received messages:', newMessages.length);
+            
+            // Mark messages as read when received (for messages not sent by current user)
+            const currentUser = currentUserRef.current;
+            if (currentUser) {
+              const now = Date.now();
+              
+              // Throttle read marking to prevent excessive updates
+              if (now - lastReadMarkTime.current > READ_MARK_THROTTLE) {
+                const unreadMessageIds = newMessages
+                  .filter(msg => 
+                    msg.senderId !== currentUser.uid && 
+                    !msg.id.startsWith('temp_') &&
+                    (!msg.readBy || !msg.readBy[currentUser.uid])
+                  )
+                  .map(msg => msg.id);
+                
+                if (unreadMessageIds.length > 0) {
+                  console.log('📖 Marking', unreadMessageIds.length, 'messages as read:', unreadMessageIds);
+                  MessagingService.markMessagesAsRead(chatId, currentUser.uid, unreadMessageIds);
+                  lastReadMarkTime.current = now;
+                } else {
+                  console.log('📖 No unread messages to mark');
+                }
+              }
+            }
+            
             // Merge with existing optimistic messages
             setMessages(prevMessages => {
-              // Keep optimistic messages that aren't in the server response yet
-              const optimisticMessages = prevMessages.filter(msg => msg.id.startsWith('temp_'));
-              const serverMessages = newMessages;
+              // Remove ALL optimistic messages first to avoid duplicates
+              const nonOptimisticMessages = prevMessages.filter(msg => !msg.id.startsWith('temp_'));
               
-              // Create a map to avoid duplicates
+              // Create a map to avoid duplicates by message ID
               const messageMap = new Map();
               
               // Add server messages first (they take priority)
-              serverMessages.forEach(msg => {
+              newMessages.forEach(msg => {
                 messageMap.set(msg.id, msg);
               });
               
-              // Add optimistic messages only if they don't exist in server messages
-              // Check both by ID and by content/timestamp to avoid duplicates
-              optimisticMessages.forEach(optMsg => {
-                const isDuplicate = serverMessages.some(serverMsg => 
-                  serverMsg.text === optMsg.text && 
-                  serverMsg.senderId === optMsg.senderId &&
-                  Math.abs(serverMsg.timestamp.getTime() - optMsg.timestamp.getTime()) < 5000 // Within 5 seconds
-                );
-                
-                if (!isDuplicate && !messageMap.has(optMsg.id)) {
-                  messageMap.set(optMsg.id, optMsg);
+              // Add non-optimistic messages only if they don't exist in server messages
+              nonOptimisticMessages.forEach(msg => {
+                if (!messageMap.has(msg.id)) {
+                  messageMap.set(msg.id, msg);
                 }
               });
               
@@ -132,7 +152,7 @@ export const useMessages = ({
               const combinedMessages = Array.from(messageMap.values())
                 .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
               
-              console.log('📝 Combined messages:', combinedMessages.length, 'server:', serverMessages.length, 'optimistic:', optimisticMessages.length);
+              console.log('📝 Combined messages:', combinedMessages.length, 'server:', newMessages.length, 'non-optimistic:', nonOptimisticMessages.length);
               return combinedMessages;
             });
             setConnectionError(false);
@@ -165,7 +185,7 @@ export const useMessages = ({
   // Send a message
   const sendMessage = useCallback(async (text: string, messageType: MessageType = MessageType.TEXT) => {
     const currentUser = currentUserRef.current;
-    console.log('🔍 sendMessage called with:', { text, messageType, currentUser });
+    console.log('🔍 sendMessage called');
     
     if (!currentUser) {
       const error: AppError = {
@@ -179,46 +199,48 @@ export const useMessages = ({
     }
 
     try {
-      // Create optimistic message
+      // Create optimistic message with a more unique ID
       const optimisticMessage: Message = {
-        id: `temp_${Date.now()}`,
+        id: `temp_${currentUser.uid}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         text,
         senderId: currentUser.uid,
         timestamp: new Date(),
         chatId,
         messageType,
-        status: MessageStatus.SENDING
       };
 
-      console.log('📝 Adding optimistic message:', optimisticMessage);
+      console.log('📝 Adding optimistic message');
       // Add optimistic message immediately
       setMessages(prev => [...prev, optimisticMessage]);
 
       // Send to server
-      console.log('🚀 Sending message to server...');
+      console.log('🚀 Sending message to server');
       const result = await MessagingService.sendMessage({
         text,
         senderId: currentUser.uid,
         chatId,
         messageType,
         timestamp: new Date(),
-        status: MessageStatus.SENDING
       });
 
       console.log('📡 Server response:', result);
 
       if (result.success) {
-        // Update message with server response
-        console.log('✅ Message sent successfully, updating UI');
-        console.log('🔄 Updating message:', optimisticMessage.id, 'with server data:', result.data);
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === optimisticMessage.id 
-              ? { ...result.data, status: MessageStatus.SENT }
-              : msg
-          )
-        );
-        console.log('✅ Message status updated to SENT');
+        // Replace optimistic message with real message from server
+        console.log('✅ Message sent successfully, replacing optimistic message');
+        console.log('🔄 Replacing message:', optimisticMessage.id, 'with server data:', result.data);
+        setMessages(prev => {
+          // Remove the optimistic message and add the real message with SENT status
+          const filteredMessages = prev.filter(msg => msg.id !== optimisticMessage.id);
+          const realMessage = { 
+            ...result.data, 
+            timestamp: result.data.timestamp || new Date()
+          };
+          const newMessages = [...filteredMessages, realMessage].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          console.log('📝 Updated messages count:', newMessages.length);
+          return newMessages;
+        });
+        console.log('✅ Message added to messages list');
       } else {
         // Remove optimistic message and show error
         console.log('❌ Message send failed:', result.error);
@@ -283,45 +305,28 @@ export const useMessages = ({
   // Retry failed message
   const retryFailedMessage = useCallback(async (messageId: string) => {
     const message = messages.find(msg => msg.id === messageId);
-    if (!message || message.status !== MessageStatus.FAILED) return;
+    if (!message) return;
 
     try {
-      // Update message status to sending
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, status: MessageStatus.SENDING }
-            : msg
-        )
-      );
-
       // Retry sending
       const result = await MessagingService.sendMessage({
         text: message.text,
         senderId: message.senderId,
         chatId: message.chatId,
         messageType: message.messageType,
-        timestamp: message.timestamp,
-        status: MessageStatus.SENDING
+        timestamp: new Date()
       });
 
       if (result.success) {
+        // Replace the message with the new one
         setMessages(prev => 
           prev.map(msg => 
             msg.id === messageId 
-              ? { ...result.data, status: MessageStatus.SENT }
+              ? { ...result.data, timestamp: result.data.timestamp || new Date() }
               : msg
           )
         );
       } else {
-        // Mark as failed again
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === messageId 
-              ? { ...msg, status: MessageStatus.FAILED }
-              : msg
-          )
-        );
         setError(result.error);
         onError?.(result.error);
       }

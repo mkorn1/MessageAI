@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useMessageStatuses } from '../hooks/useMessageStatuses';
 import { Message } from '../types';
 import MessageBubble from './MessageBubble';
 
@@ -14,6 +15,8 @@ interface MessageListProps {
   onMessageLongPress?: (message: Message) => void;
   onRetryMessage?: (messageId: string) => void;
   hasMoreMessages?: boolean;
+  totalParticipants?: number; // Add total participants for group chat read count
+  isGroupChat?: boolean; // Add flag to indicate if this is a group chat
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -26,10 +29,16 @@ const MessageList: React.FC<MessageListProps> = ({
   onMessagePress,
   onMessageLongPress,
   onRetryMessage,
-  hasMoreMessages = false
+  hasMoreMessages = false,
+  totalParticipants,
+  isGroupChat
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  
+  // Get message IDs for status fetching
+  const messageIds = messages.map(msg => msg.id);
+  const { getStatus } = useMessageStatuses(messageIds);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -80,10 +89,14 @@ const MessageList: React.FC<MessageListProps> = ({
           onPress={() => onMessagePress?.(item)}
           onLongPress={() => onMessageLongPress?.(item)}
           onRetry={onRetryMessage}
+          currentUserId={currentUserId}
+          totalParticipants={totalParticipants}
+          isGroupChat={isGroupChat}
+          status={getStatus(item.id)}
         />
       </View>
     );
-  }, [currentUserId, messages, onMessagePress, onMessageLongPress]);
+  }, [currentUserId, messages, onMessagePress, onMessageLongPress, getStatus]);
 
   // Render loading indicator at top
   const renderHeader = useCallback(() => {

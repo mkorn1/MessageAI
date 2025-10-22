@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Message, MessageStatus, MessageType } from '../types';
+import { Message, MessageType } from '../types';
+import { MessageStatusType } from '../types/messageStatus';
 
 interface MessageBubbleProps {
   message: Message;
@@ -11,6 +12,10 @@ interface MessageBubbleProps {
   onLongPress?: () => void;
   showDetailedTimestamp?: boolean;
   onRetry?: (messageId: string) => void;
+  currentUserId?: string; // Add current user ID for read status calculation
+  totalParticipants?: number; // Add total participants for group chat read count
+  isGroupChat?: boolean; // Add flag to indicate if this is a group chat
+  status?: MessageStatusType; // Add status prop
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
@@ -21,8 +26,59 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   onPress,
   onLongPress,
   showDetailedTimestamp = false,
-  onRetry
+  onRetry,
+  currentUserId,
+  totalParticipants,
+  isGroupChat,
+  status = MessageStatusType.SENDING
 }) => {
+  // Determine the effective status based on message data and readBy field
+  const getEffectiveStatus = (): MessageStatusType => {
+    // For own messages, prioritize the status prop from useMessageStatuses hook
+    if (isOwnMessage) {
+      // If we have a status from the message status service, use it
+      if (status && status !== MessageStatusType.SENDING) {
+        return status;
+      }
+      
+      // Fallback to readBy field for backward compatibility
+      if (currentUserId) {
+        const readByOthers = message.readBy && Object.keys(message.readBy).some(userId => userId !== currentUserId);
+        if (readByOthers) {
+          return MessageStatusType.READ;
+        }
+        return MessageStatusType.SENT;
+      }
+      
+      return MessageStatusType.SENT;
+    }
+    
+    // For messages from others, use the provided status
+    return status;
+  };
+
+  const effectiveStatus = getEffectiveStatus();
+
+  // Calculate read count for group chats
+  const getReadCount = (): string | null => {
+    if (!isGroupChat || !isOwnMessage || !message.readBy || !totalParticipants) {
+      return null;
+    }
+
+    // Count readers excluding the sender
+    const readers = Object.keys(message.readBy).filter(userId => userId !== currentUserId);
+    const readCount = readers.length;
+    const totalCount = totalParticipants - 1; // Exclude sender
+
+    if (totalCount <= 1) {
+      return null; // Don't show read count for 1-on-1 chats
+    }
+
+    return `Read by ${readCount} of ${totalCount}`;
+  };
+
+  const readCountText = getReadCount();
+
   const formatTime = (timestamp: Date): string => {
     const now = new Date();
     const messageTime = new Date(timestamp);
@@ -78,34 +134,30 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     });
   };
 
-  const getStatusIcon = (status: MessageStatus): string => {
+  const getStatusIcon = (status: MessageStatusType): string => {
     switch (status) {
-      case MessageStatus.SENDING:
+      case MessageStatusType.SENDING:
         return '⏳';
-      case MessageStatus.SENT:
+      case MessageStatusType.SENT:
         return '✓';
-      case MessageStatus.DELIVERED:
+      case MessageStatusType.READ:
         return '✓✓';
-      case MessageStatus.READ:
-        return '✓✓';
-      case MessageStatus.FAILED:
+      case MessageStatusType.FAILED:
         return '⚠️';
       default:
         return '';
     }
   };
 
-  const getStatusColor = (status: MessageStatus): string => {
+  const getStatusColor = (status: MessageStatusType): string => {
     switch (status) {
-      case MessageStatus.SENDING:
+      case MessageStatusType.SENDING:
         return '#999';
-      case MessageStatus.SENT:
+      case MessageStatusType.SENT:
         return '#999';
-      case MessageStatus.DELIVERED:
-        return '#999';
-      case MessageStatus.READ:
+      case MessageStatusType.READ:
         return '#007AFF';
-      case MessageStatus.FAILED:
+      case MessageStatusType.FAILED:
         return '#FF3B30';
       default:
         return '#999';
@@ -183,15 +235,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           <Text
             style={[
               styles.statusIcon,
-              { color: getStatusColor(message.status) }
+              { color: getStatusColor(effectiveStatus) }
             ]}
           >
-            {getStatusIcon(message.status)}
+            {getStatusIcon(effectiveStatus)}
           </Text>
         )}
         
         {/* Retry button for failed messages */}
-        {message.status === MessageStatus.FAILED && onRetry && (
+        {effectiveStatus === MessageStatusType.FAILED && onRetry && (
           <TouchableOpacity
             style={styles.retryButton}
             onPress={() => onRetry(message.id)}
@@ -200,6 +252,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           </TouchableOpacity>
         )}
       </View>
+      
+      {/* Read count for group chats */}
+      {readCountText && (
+        <Text style={styles.readCountText}>
+          {readCountText}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 };
@@ -292,6 +351,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '600',
+  },
+  readCountText: {
+    fontSize: 10,
+    color: '#8E8E93',
+    marginTop: 2,
+    marginHorizontal: 2,
+    textAlign: 'right',
+    opacity: 0.7,
   },
 });
 

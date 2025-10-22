@@ -11,19 +11,19 @@ import {
     serverTimestamp,
     startAfter,
     updateDoc,
-    where,
-    writeBatch
+    where
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import {
     CreateMessage,
     FirebaseError,
     Message,
-    MessageStatus,
     Result,
     createError,
     isRetryableError
 } from '../types';
+import { MessageStatusType } from '../types/messageStatus';
+import { messageStatusService } from './messageStatus';
 
 class MessagingService {
   private readonly MESSAGES_COLLECTION = 'messages';
@@ -36,7 +36,7 @@ class MessagingService {
    */
   async sendMessage(messageData: CreateMessage): Promise<Result<Message>> {
     try {
-      console.log('📤 MessagingService.sendMessage called with:', messageData);
+      console.log('📤 MessagingService.sendMessage called');
       
       // Validate message data
       const validationResult = this.validateMessage(messageData);
@@ -46,27 +46,40 @@ class MessagingService {
       }
 
       // Skip chat verification - let Firestore handle it naturally
-      console.log('📤 Proceeding with message send to chat:', messageData.chatId);
+      console.log('📤 Proceeding with message send');
 
       // Create message document
       const messageRef = doc(collection(db, this.MESSAGES_COLLECTION));
       const message: Message = {
         id: messageRef.id,
         ...messageData,
-        timestamp: messageData.timestamp || new Date(),
-        status: messageData.status || MessageStatus.SENDING
+        timestamp: messageData.timestamp || new Date()
       };
 
-      console.log('📝 Created message object:', message);
+      console.log('📝 Created message object');
 
       // Add to Firestore
-      console.log('🔥 Adding to Firestore...');
+      console.log('🔥 Adding to Firestore');
       await addDoc(collection(db, this.MESSAGES_COLLECTION), {
         ...message,
         timestamp: serverTimestamp()
       });
 
+      // Add initial SENDING status
+      await messageStatusService.addMessageStatus({
+        messageId: message.id,
+        status: MessageStatusType.SENDING
+      });
+
       console.log('✅ Message added to Firestore successfully');
+
+      // Update status to SENT
+      await messageStatusService.addMessageStatus({
+        messageId: message.id,
+        status: MessageStatusType.SENT
+      });
+
+      console.log('✅ Message status updated to SENT');
 
       // Update chat's last message (non-blocking)
       console.log('🔄 Updating chat last message...');
@@ -323,23 +336,76 @@ class MessagingService {
     messageIds: string[]
   ): Promise<Result<void>> {
     try {
-      const batch = writeBatch(db);
+      // Validate inputs
+      if (!chatId || !userId || !messageIds.length) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'invalid-argument',
+            message: 'Invalid parameters for markMessagesAsRead'
+          }),
+          retryable: false
+        };
+      }
+
+      // Filter out empty message IDs and validate
+      const validMessageIds = messageIds.filter(id => id && typeof id === 'string');
+      if (validMessageIds.length === 0) {
+        return {
+          success: true,
+          data: undefined
+        };
+      }
+
+      // Check which messages actually exist in Firestore
+      const existingMessageIds: string[] = [];
+      for (const messageId of validMessageIds) {
+        try {
+          const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
+          const messageDoc = await getDoc(messageRef);
+          if (messageDoc.exists()) {
+            existingMessageIds.push(messageId);
+          } else {
+            console.log(`⚠️ Message ${messageId} not found in Firestore, skipping...`);
+          }
+        } catch (error) {
+          console.log(`⚠️ Error checking message ${messageId}:`, error);
+        }
+      }
+
+      if (existingMessageIds.length === 0) {
+        console.log('📭 No existing messages to mark as read');
+        return {
+          success: true,
+          data: undefined
+        };
+      }
+
+      // Use the new message status service
+      const result = await messageStatusService.markMessagesAsRead(existingMessageIds, userId);
       
-      messageIds.forEach((messageId) => {
-        const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
-        batch.update(messageRef, {
-          [`readBy.${userId}`]: serverTimestamp()
-        });
-      });
+      if (result.success) {
+        console.log(`✅ Marked ${existingMessageIds.length} messages as read for user ${userId} in chat ${chatId}`);
+      } else {
+        console.error('❌ Failed to mark messages as read via status service:', result.error);
+      }
 
-      await batch.commit();
-
-      return {
-        success: true,
-        data: undefined
-      };
+      return result;
 
     } catch (error: any) {
+      console.error('❌ Failed to mark messages as read:', error);
+      
+      // Handle specific case where message doesn't exist (optimistic message)
+      if (error.code === 'not-found') {
+        console.log('⚠️ Some messages not found in Firestore (likely optimistic messages), continuing...');
+        return {
+          success: true,
+          data: undefined
+        };
+      }
+      
       return {
         success: false,
         error: createError<FirebaseError>({
@@ -354,6 +420,172 @@ class MessagingService {
           service: 'firestore',
           code: error.code || 'unknown',
           message: error.message || 'Failed to mark messages as read'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Mark all unread messages in a chat as read for a user
+   */
+  async markAllMessagesAsRead(
+    chatId: string, 
+    userId: string
+  ): Promise<Result<void>> {
+    try {
+      // Validate inputs
+      if (!chatId || !userId) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'invalid-argument',
+            message: 'Invalid parameters for markAllMessagesAsRead'
+          }),
+          retryable: false
+        };
+      }
+
+      // Get all messages in the chat
+      const messagesQuery = query(
+        collection(db, this.MESSAGES_COLLECTION),
+        where('chatId', '==', chatId),
+        orderBy('timestamp', 'desc')
+      );
+
+      const messagesSnapshot = await getDocs(messagesQuery);
+      
+      if (messagesSnapshot.empty) {
+        console.log(`📭 No unread messages found for user ${userId} in chat ${chatId}`);
+        return {
+          success: true,
+          data: undefined
+        };
+      }
+
+      // Filter messages that haven't been read by this user (excluding sender's own messages)
+      const unreadMessages: string[] = [];
+      messagesSnapshot.forEach((doc) => {
+        const messageData = doc.data();
+        const readBy = messageData.readBy || {};
+        
+        // Skip sender's own messages and messages already read by this user
+        if (messageData.senderId !== userId && !readBy[userId]) {
+          unreadMessages.push(doc.id);
+        }
+      });
+
+      if (unreadMessages.length === 0) {
+        console.log(`✅ All messages already read by user ${userId} in chat ${chatId}`);
+        return {
+          success: true,
+          data: undefined
+        };
+      }
+
+      // Mark all unread messages as read
+      const result = await this.markMessagesAsRead(chatId, userId, unreadMessages);
+      
+      if (result.success) {
+        console.log(`✅ Marked all ${unreadMessages.length} unread messages as read for user ${userId} in chat ${chatId}`);
+      }
+
+      return result;
+
+    } catch (error: any) {
+      console.error('❌ Failed to mark all messages as read:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to mark all messages as read',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to mark all messages as read'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Get read count for a message in group chats
+   */
+  async getMessageReadCount(
+    messageId: string,
+    totalParticipants: number,
+    senderId: string
+  ): Promise<Result<{ readCount: number; totalCount: number }>> {
+    try {
+      if (!messageId || totalParticipants <= 0) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'invalid-argument',
+            message: 'Invalid parameters for getMessageReadCount'
+          }),
+          retryable: false
+        };
+      }
+
+      const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
+      const messageDoc = await getDoc(messageRef);
+
+      if (!messageDoc.exists()) {
+        return {
+          success: false,
+          error: createError<FirebaseError>({
+            type: 'firebase',
+            service: 'firestore',
+            code: 'not-found',
+            message: 'Message not found'
+          }),
+          retryable: false
+        };
+      }
+
+      const messageData = messageDoc.data();
+      const readBy = messageData.readBy || {};
+      
+      // Count unique readers (excluding sender)
+      const readers = Object.keys(readBy).filter(userId => userId !== senderId);
+      const readCount = readers.length;
+      
+      // Total count excludes sender
+      const totalCount = totalParticipants - 1;
+
+      return {
+        success: true,
+        data: {
+          readCount,
+          totalCount
+        }
+      };
+
+    } catch (error: any) {
+      console.error('❌ Failed to get message read count:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to get message read count',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to get message read count'
         }))
       };
     }
