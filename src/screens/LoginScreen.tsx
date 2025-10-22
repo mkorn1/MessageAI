@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../contexts/AuthContext';
 import AuthService from '../services/auth';
 
 const LoginScreen: React.FC = () => {
@@ -9,6 +10,13 @@ const LoginScreen: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { user } = useAuth(); // Add this to access auth state
+
+  // Debug logging
+  console.log('🔐 LoginScreen render:', {
+    user: user ? `User ${user.uid}` : 'No user',
+    shouldShowLogin: !user
+  });
 
   const handleEmailAuth = async () => {
     if (!email.trim() || !password.trim()) {
@@ -18,15 +26,19 @@ const LoginScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
+      console.log('🔐 LoginScreen: Starting email authentication...');
       if (isSignUp) {
-        await AuthService.signUpWithEmail(email, password);
+        const user = await AuthService.signUpWithEmail(email, password);
+        console.log('🔐 LoginScreen: Sign up successful:', user.uid);
         Alert.alert('Success', 'Account created successfully!');
       } else {
-        await AuthService.signInWithEmail(email, password);
+        const user = await AuthService.signInWithEmail(email, password);
+        console.log('🔐 LoginScreen: Sign in successful:', user.uid);
         Alert.alert('Success', 'Signed in successfully!');
       }
       // Navigation will be handled by AuthContext automatically
     } catch (error: any) {
+      console.error('🔐 LoginScreen: Authentication error:', error);
       Alert.alert('Error', error.message || 'Authentication failed');
     } finally {
       setIsLoading(false);

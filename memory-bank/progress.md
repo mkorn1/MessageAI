@@ -74,52 +74,58 @@
 - [x] **Testing**: No linting errors, ready for user testing
 
 ## In Progress
-- [ ] Firebase project setup
-- [ ] Firebase configuration files
-- [ ] Core messaging implementation
+- [ ] Milestone 3.1: Delivery Receipts (Hour 13)
 
 ## Not Started
 
-### Phase 1: Core Messaging Foundation (Hours 1-8)
-- [ ] **Milestone 1.1**: Minimum Viable Message (Hours 1-2)
-  - [ ] Firebase project setup
-  - [ ] Basic chat UI (message list, input field)
-  - [ ] Send message → appears on sender's screen
-  - [ ] Message visible in Firebase Console
+### Phase 1: Core Messaging Foundation (Hours 1-8) ✅ COMPLETE
+- [x] **Milestone 1.1**: Minimum Viable Message (Hours 1-2)
+  - [x] Firebase project setup
+  - [x] Basic chat UI (message list, input field)
+  - [x] Send message → appears on sender's screen
+  - [x] Message visible in Firebase Console
 
-- [ ] **Milestone 1.2**: Real-Time Sync (Hours 3-4)
-  - [ ] Firestore real-time listeners
-  - [ ] Message sent from Device A appears on Device B
-  - [ ] Bidirectional messaging working
+- [x] **Milestone 1.2**: Real-Time Sync (Hours 3-4)
+  - [x] Firestore real-time listeners
+  - [x] Message sent from Device A appears on Device B
+  - [x] Bidirectional messaging working
 
-- [ ] **Milestone 1.3**: Local Persistence (Hours 5-6)
-  - [ ] Expo SQLite setup
-  - [ ] Message persistence (save to SQLite on receive)
-  - [ ] Load messages from SQLite on app open
-  - [ ] Messages survive app restart
+- [x] **Milestone 1.3**: Local Persistence (Hours 5-6)
+  - [x] Expo SQLite setup
+  - [x] Message persistence (save to SQLite on receive)
+  - [x] Load messages from SQLite on app open
+  - [x] Messages survive app restart
 
-- [ ] **Milestone 1.4**: Optimistic UI Updates (Hours 7-8)
-  - [ ] Message appears instantly with clock icon
-  - [ ] Confirmation when server receives message
-  - [ ] Error state if send fails with retry option
-  - [ ] Offline message queue
+- [x] **Milestone 1.4**: Optimistic UI Updates (Hours 7-8)
+  - [x] Message appears instantly with clock icon
+  - [x] Confirmation when server receives message
+  - [x] Error state if send fails with retry option
+  - [x] Offline message queue
 
-### Phase 2: Presence & Authentication (Hours 9-12)
-- [ ] **Milestone 2.1**: User Authentication (Hours 9-10)
-  - [ ] Firebase Auth with Phone Number Sign-In
-  - [ ] SMS verification code flow
-  - [ ] User profile setup (display name, photo)
-  - [ ] Session persistence
+### Phase 2: Presence & Authentication (Hours 9-12) ✅ COMPLETE
+- [x] **Milestone 2.1**: User Authentication (Hours 9-10)
+  - [x] Firebase Auth with Phone Number Sign-In
+  - [x] SMS verification code flow
+  - [x] User profile setup (display name, photo)
+  - [x] Session persistence
 
-- [ ] **Milestone 2.2**: Online/Offline Presence (Hour 11)
-  - [ ] Green dot indicator when user is online
-  - [ ] Status updates within 5 seconds
-  - [ ] Display in chat header and contact list
+- [x] **Milestone 2.2**: Online/Offline Presence (Hour 11)
+  - [x] Green dot indicator when user is online
+  - [x] Status updates within 5 seconds
+  - [x] Display in chat header and contact list
 
-- [ ] **Milestone 2.3**: Typing Indicators (Hour 12)
-  - [ ] "User is typing..." appears when typing
-  - [ ] Disappears after 3 seconds of inactivity
-  - [ ] Only visible in active conversation
+- [x] **Milestone 2.3**: Typing Indicators (Hour 12)
+  - [x] "User is typing..." appears when typing
+  - [x] Disappears after 3 seconds of inactivity
+  - [x] Only visible in active conversation
+
+### Phase 2.5: Enhanced Chat Features ✅ COMPLETE
+- [x] **1x1 Chat Implementation**
+  - [x] Automatic detection of 1x1 vs group chats
+  - [x] Skip naming UI for 1x1 chats
+  - [x] Auto-name 1x1 chats with other user's email
+  - [x] Chat rename functionality in settings
+  - [x] Support for both direct and group chat renaming
 
 ### Phase 3: Message States & Receipts (Hours 13-14)
 - [ ] **Milestone 3.1**: Delivery Receipts (Hour 13)

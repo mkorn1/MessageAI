@@ -19,10 +19,10 @@ import Animated, {
     useSharedValue,
     withSpring,
 } from 'react-native-reanimated';
-import MemberSelection from '../components/MemberSelection';
+import PresenceIndicator from '../components/PresenceIndicator';
 import { useAuth } from '../contexts/AuthContext';
+import usePresence from '../hooks/usePresence';
 import ChatService from '../services/chat';
-import { User } from '../services/user';
 import { Chat, ChatType } from '../types';
 
 
@@ -34,8 +34,6 @@ const HomeScreen: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [newChatName, setNewChatName] = useState('');
   const [showCreateChat, setShowCreateChat] = useState(false);
-  const [showMemberSelection, setShowMemberSelection] = useState(false);
-  const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
 
 
   // Load chats from Firestore
@@ -97,20 +95,15 @@ const HomeScreen: React.FC = () => {
     setIsRefreshing(false);
   }, [loadChats]);
 
-  // Handle member selection
-  const handleMembersSelected = useCallback((members: User[]) => {
-    setSelectedMembers(members);
-    setShowMemberSelection(false);
+  // Handle new chat creation - simplified approach
+  const handleNewChat = useCallback(() => {
+    // For now, create a simple group chat with just the current user
+    // This can be enhanced later with proper member selection
     setShowCreateChat(true);
   }, []);
 
-  // Handle member selection cancel
-  const handleMemberSelectionCancel = useCallback(() => {
-    setShowMemberSelection(false);
-    setSelectedMembers([]);
-  }, []);
 
-  // Create new chat
+  // Create group chat
   const handleCreateChat = useCallback(async () => {
     if (!newChatName.trim()) {
       Alert.alert('Error', 'Please enter a chat name');
@@ -123,10 +116,11 @@ const HomeScreen: React.FC = () => {
     }
 
     try {
-      console.log('🏗️ Creating new chat:', newChatName.trim());
+      console.log('🏗️ Creating group chat:', newChatName.trim());
       
-      // Include selected members in participants
-      const participantIds = [user.uid, ...selectedMembers.map(member => member.uid)];
+      // For now, create group chat with just the current user
+      // This can be enhanced later to include other members
+      const participantIds = [user.uid];
       
       const createChatData = {
         name: newChatName.trim(),
@@ -140,30 +134,30 @@ const HomeScreen: React.FC = () => {
         isMuted: false,
         notificationSettings: {
           soundEnabled: true,
-          vibrationEnabled: true
+          vibrationEnabled: true,
+          showPreviews: true
         }
       };
 
       const result = await ChatService.createChat(createChatData);
       
       if (result.success) {
-        console.log('✅ Chat created successfully:', result.data.id);
+        console.log('✅ Group chat created successfully:', result.data.id);
         setChats(prev => [result.data, ...prev]);
         setNewChatName('');
         setShowCreateChat(false);
-        setSelectedMembers([]);
         
         // Navigate directly to chat window on success
         router.push(`/chat?chatId=${result.data.id}`);
       } else {
-        console.error('❌ Failed to create chat:', result.error);
+        console.error('❌ Failed to create group chat:', result.error);
         Alert.alert('Error', 'Failed to create chat');
       }
     } catch (error) {
-      console.error('💥 Error creating chat:', error);
+      console.error('💥 Error creating group chat:', error);
       Alert.alert('Error', 'Failed to create chat');
     }
-  }, [newChatName, user?.uid, selectedMembers, router]);
+  }, [newChatName, user?.uid, router]);
 
   // Enter chat
   const handleEnterChat = useCallback((chatId: string) => {
@@ -237,8 +231,20 @@ const HomeScreen: React.FC = () => {
     );
   }, []);
 
+  // Chat Item with Presence Data Component
+  const ChatItemWithPresence = ({ item }: { item: Chat }) => {
+    const { presence } = usePresence(item);
+    
+    return (
+      <SwipeableChatItem 
+        item={item} 
+        onlineCount={presence?.onlineCount || 0}
+      />
+    );
+  };
+
   // Swipeable Chat Item Component
-  const SwipeableChatItem = ({ item }: { item: Chat }) => {
+  const SwipeableChatItem = ({ item, onlineCount }: { item: Chat; onlineCount: number }) => {
     const translateX = useSharedValue(0);
     const [isSwipeOpen, setIsSwipeOpen] = useState(false);
 
@@ -341,17 +347,25 @@ const HomeScreen: React.FC = () => {
                   <Text style={styles.participantCount}>
                     {item.participants?.length || 0} participants
                   </Text>
+                  <View style={styles.presenceContainer}>
+                    {onlineCount > 0 ? (
+                      <PresenceIndicator 
+                        onlineCount={onlineCount}
+                        dotSize={10}
+                        spacing={4}
+                        maxIndividualDots={5}
+                        testID={`presence-indicator-${item.id}`}
+                      />
+                    ) : (
+                      <View style={styles.noPresenceIndicator} />
+                    )}
+                  </View>
                 </View>
                 
                 <View style={styles.chatFooter}>
                   <Text style={styles.chatLastMessage} numberOfLines={1}>
                     {item.lastMessage?.text || 'No messages yet'}
                   </Text>
-                  {item.unreadCount && item.unreadCount > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                    </View>
-                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -363,7 +377,7 @@ const HomeScreen: React.FC = () => {
 
   // Render chat item
   const renderChatItem = ({ item }: { item: Chat }) => {
-    return <SwipeableChatItem item={item} />;
+    return <ChatItemWithPresence item={item} />;
   };
 
   if (isLoading) {
@@ -438,7 +452,7 @@ const HomeScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.newChatButton}
-              onPress={() => setShowMemberSelection(true)}
+              onPress={handleNewChat}
             >
               <Text style={styles.newChatButtonText}>+ New Chat</Text>
             </TouchableOpacity>
@@ -453,7 +467,7 @@ const HomeScreen: React.FC = () => {
             </Text>
             <TouchableOpacity
               style={styles.emptyStateButton}
-              onPress={() => setShowMemberSelection(true)}
+              onPress={handleNewChat}
             >
               <Text style={styles.emptyStateButtonText}>Create Chat</Text>
             </TouchableOpacity>
@@ -476,17 +490,6 @@ const HomeScreen: React.FC = () => {
         )}
       </View>
 
-      {/* Member Selection Modal */}
-      {showMemberSelection && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <MemberSelection
-              onMembersSelected={handleMembersSelected}
-              onCancel={handleMemberSelectionCancel}
-            />
-          </View>
-        </View>
-      )}
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -702,12 +705,35 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
   },
   chatSubheader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
+    paddingRight: 4, // Add slight padding for better right alignment
   },
   participantCount: {
     fontSize: 12,
     color: '#8E8E93',
     fontWeight: '400',
+    flex: 1, // Allow text to take available space
+    marginRight: 8, // Add margin to separate from presence indicator
+  },
+  presenceContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 200, 81, 0.1)', // Subtle green background
+    marginLeft: 'auto', // Ensure it stays on the right side
+    flexShrink: 0, // Prevent shrinking
+  },
+  noPresenceIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'transparent', // Invisible placeholder
   },
   chatFooter: {
     flexDirection: 'row',

@@ -36,10 +36,44 @@ class AuthService {
       await setDoc(userDoc, {
         ...userData,
         createdAt: new Date(),
-        lastLoginAt: new Date()
+        lastLoginAt: new Date(),
+        isOnline: true, // Set user as online when they sign in
+        lastSeen: new Date()
       }, { merge: true });
     } catch (error) {
       console.error('Error creating user document:', error);
+    }
+  }
+
+  /**
+   * Set user as online in Firestore
+   */
+  private async setUserOnline(uid: string): Promise<void> {
+    try {
+      const userDoc = doc(db, 'users', uid);
+      await setDoc(userDoc, {
+        isOnline: true,
+        lastSeen: new Date()
+      }, { merge: true });
+      console.log('✅ User set as online:', uid);
+    } catch (error) {
+      console.error('Error setting user online:', error);
+    }
+  }
+
+  /**
+   * Set user as offline in Firestore
+   */
+  private async setUserOffline(uid: string): Promise<void> {
+    try {
+      const userDoc = doc(db, 'users', uid);
+      await setDoc(userDoc, {
+        isOnline: false,
+        lastSeen: new Date()
+      }, { merge: true });
+      console.log('✅ User set as offline:', uid);
+    } catch (error) {
+      console.error('Error setting user offline:', error);
     }
   }
 
@@ -57,6 +91,9 @@ class AuthService {
         displayName: user.displayName,
         photoURL: user.photoURL
       });
+      
+      // Set user as online
+      await this.setUserOnline(user.uid);
       
       return {
         uid: user.uid,
@@ -80,6 +117,9 @@ class AuthService {
     try {
       const userCredential = await signInWithEmailAndPassword(authService, email, password);
       const user = userCredential.user;
+      
+      // Set user as online
+      await this.setUserOnline(user.uid);
       
       return {
         uid: user.uid,
@@ -112,6 +152,9 @@ class AuthService {
         photoURL: user.photoURL
       });
       
+      // Set user as online
+      await this.setUserOnline(user.uid);
+      
       return {
         uid: user.uid,
         phoneNumber: user.phoneNumber,
@@ -142,6 +185,9 @@ class AuthService {
         displayName: user.displayName,
         photoURL: user.photoURL
       });
+      
+      // Set user as online
+      await this.setUserOnline(user.uid);
       
       return {
         uid: user.uid,
@@ -218,6 +264,12 @@ class AuthService {
    */
   async signOut(): Promise<void> {
     try {
+      // Set user as offline before signing out
+      const currentUser = authService.currentUser;
+      if (currentUser) {
+        await this.setUserOffline(currentUser.uid);
+      }
+      
       await signOut(authService);
     } catch (error: any) {
       throw {
@@ -231,16 +283,21 @@ class AuthService {
    * Listen to authentication state changes
    */
   onAuthStateChanged(callback: (user: User | null) => void): () => void {
+    console.log('🔐 AuthService: Setting up Firebase auth state listener');
     return onAuthStateChanged(authService, (user) => {
+      console.log('🔐 AuthService: Firebase auth state changed:', user ? `User ${user.uid}` : 'No user');
       if (user) {
-        callback({
+        const userData = {
           uid: user.uid,
           phoneNumber: user.phoneNumber,
           email: user.email,
           displayName: user.displayName || undefined,
           photoURL: user.photoURL || undefined
-        });
+        };
+        console.log('🔐 AuthService: Calling callback with user:', userData.uid);
+        callback(userData);
       } else {
+        console.log('🔐 AuthService: Calling callback with null');
         callback(null);
       }
     });

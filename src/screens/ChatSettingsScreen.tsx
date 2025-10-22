@@ -32,6 +32,33 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [showRenameChat, setShowRenameChat] = useState(false);
+  const [newChatName, setNewChatName] = useState(chat.name || '');
+
+  // Handle rename chat
+  const handleRenameChat = useCallback(async () => {
+    if (!newChatName.trim()) {
+      Alert.alert('Error', 'Please enter a chat name');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const result = await ChatService.updateChatName(chat.id, newChatName.trim());
+      
+      if (result.success) {
+        Alert.alert('Success', 'Chat name updated successfully');
+        setShowRenameChat(false);
+        // The chat name will be updated in the parent component through real-time listeners
+      } else {
+        Alert.alert('Error', 'Failed to update chat name');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update chat name');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [chat.id, newChatName]);
 
   // Handle delete chat
   const handleDeleteChat = useCallback(async () => {
@@ -151,7 +178,15 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({
         <Text style={styles.sectionTitle}>Chat Information</Text>
         <View style={styles.chatInfoItem}>
           <Text style={styles.chatInfoLabel}>Name:</Text>
-          <Text style={styles.chatInfoValue}>{chat.name || 'Unnamed Chat'}</Text>
+          <View style={styles.chatNameContainer}>
+            <Text style={styles.chatInfoValue}>{chat.name || 'Unnamed Chat'}</Text>
+            <TouchableOpacity
+              style={styles.renameButton}
+              onPress={() => setShowRenameChat(true)}
+            >
+              <Text style={styles.renameButtonText}>Rename</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.chatInfoItem}>
           <Text style={styles.chatInfoLabel}>Type:</Text>
@@ -164,6 +199,38 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({
           <Text style={styles.chatInfoValue}>{chat.participants.length}</Text>
         </View>
       </View>
+
+      {/* Rename Chat Section */}
+      {showRenameChat && (
+        <View style={styles.renameSection}>
+          <Text style={styles.sectionTitle}>Rename Chat</Text>
+          <TextInput
+            style={styles.renameInput}
+            placeholder="Enter new chat name"
+            value={newChatName}
+            onChangeText={setNewChatName}
+            autoFocus
+          />
+          <View style={styles.renameButtons}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setShowRenameChat(false);
+                setNewChatName(chat.name || '');
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={handleRenameChat}
+              disabled={isLoading}
+            >
+              <Text style={styles.saveButtonText}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Members Section */}
       <View style={styles.membersSection}>
@@ -301,6 +368,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1C1C1E',
     fontWeight: '400',
+  },
+  chatNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  renameButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: '#007AFF',
+    marginLeft: 8,
+  },
+  renameButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  renameSection: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  renameInput: {
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  renameButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  cancelButtonText: {
+    color: '#8E8E93',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  saveButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#007AFF',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   membersSection: {
     backgroundColor: '#FFFFFF',

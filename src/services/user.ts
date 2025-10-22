@@ -1,15 +1,7 @@
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { FirebaseError, Result, createError, isRetryableError } from '../types';
-
-export interface User {
-  uid: string;
-  email: string;
-  displayName?: string;
-  photoURL?: string;
-  createdAt?: Date;
-  lastLoginAt?: Date;
-}
+import { User } from '../types/user';
 
 class UserService {
   private readonly USERS_COLLECTION = 'users';
@@ -30,10 +22,23 @@ class UserService {
         users.push({
           uid: doc.id,
           email: data.email || '',
+          phoneNumber: data.phoneNumber || null,
           displayName: data.displayName,
           photoURL: data.photoURL,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          bio: data.bio,
+          status: data.status,
+          lastSeen: data.lastSeen?.toDate(),
           createdAt: data.createdAt?.toDate(),
-          lastLoginAt: data.lastLoginAt?.toDate()
+          updatedAt: data.updatedAt?.toDate(),
+          isOnline: data.isOnline || false,
+          showOnlineStatus: data.showOnlineStatus ?? true,
+          allowMessagesFrom: data.allowMessagesFrom || 'everyone',
+          pushNotifications: data.pushNotifications ?? true,
+          emailNotifications: data.emailNotifications ?? true,
+          theme: data.theme || 'auto',
+          language: data.language || 'en'
         });
       });
 
@@ -95,10 +100,23 @@ class UserService {
           users.push({
             uid: doc.id,
             email: email,
+            phoneNumber: data.phoneNumber || null,
             displayName: data.displayName,
             photoURL: data.photoURL,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            bio: data.bio,
+            status: data.status,
+            lastSeen: data.lastSeen?.toDate(),
             createdAt: data.createdAt?.toDate(),
-            lastLoginAt: data.lastLoginAt?.toDate()
+            updatedAt: data.updatedAt?.toDate(),
+            isOnline: data.isOnline || false,
+            showOnlineStatus: data.showOnlineStatus ?? true,
+            allowMessagesFrom: data.allowMessagesFrom || 'everyone',
+            pushNotifications: data.pushNotifications ?? true,
+            emailNotifications: data.emailNotifications ?? true,
+            theme: data.theme || 'auto',
+            language: data.language || 'en'
           });
         }
       });
@@ -158,10 +176,23 @@ class UserService {
       const user: User = {
         uid: doc.id,
         email: data.email || '',
+        phoneNumber: data.phoneNumber || null,
         displayName: data.displayName,
         photoURL: data.photoURL,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        bio: data.bio,
+        status: data.status,
+        lastSeen: data.lastSeen?.toDate(),
         createdAt: data.createdAt?.toDate(),
-        lastLoginAt: data.lastLoginAt?.toDate()
+        updatedAt: data.updatedAt?.toDate(),
+        isOnline: data.isOnline || false,
+        showOnlineStatus: data.showOnlineStatus ?? true,
+        allowMessagesFrom: data.allowMessagesFrom || 'everyone',
+        pushNotifications: data.pushNotifications ?? true,
+        emailNotifications: data.emailNotifications ?? true,
+        theme: data.theme || 'auto',
+        language: data.language || 'en'
       };
 
       console.log('✅ Found user:', user.uid);
@@ -226,10 +257,23 @@ class UserService {
           allUsers.push({
             uid: doc.id,
             email: data.email || '',
+            phoneNumber: data.phoneNumber || null,
             displayName: data.displayName,
             photoURL: data.photoURL,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            bio: data.bio,
+            status: data.status,
+            lastSeen: data.lastSeen?.toDate(),
             createdAt: data.createdAt?.toDate(),
-            lastLoginAt: data.lastLoginAt?.toDate()
+            updatedAt: data.updatedAt?.toDate(),
+            isOnline: data.isOnline || false,
+            showOnlineStatus: data.showOnlineStatus ?? true,
+            allowMessagesFrom: data.allowMessagesFrom || 'everyone',
+            pushNotifications: data.pushNotifications ?? true,
+            emailNotifications: data.emailNotifications ?? true,
+            theme: data.theme || 'auto',
+            language: data.language || 'en'
           });
         });
       }

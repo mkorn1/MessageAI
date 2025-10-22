@@ -276,6 +276,7 @@ class ChatService {
 
   /**
    * Create or get existing direct chat between two users
+   * Automatically sets chat name to the other user's email
    */
   async getOrCreateDirectChat(userId1: string, userId2: string): Promise<Result<Chat>> {
     try {
@@ -314,8 +315,15 @@ class ChatService {
 
       // No existing chat found, create new one
       console.log('🆕 Creating new direct chat');
+      
+      // Get the other user's email for naming
+      const otherUserId = userId2; // The other user is userId2
+      const otherUserResult = await this.getUserById(otherUserId);
+      const otherUserEmail = otherUserResult.success ? otherUserResult.data?.email || 'Unknown User' : 'Unknown User';
+      
       const createChatData: CreateChat = {
         type: ChatType.DIRECT,
+        name: otherUserEmail, // Set name to other user's email
         participants: [userId1, userId2],
         createdBy: userId1,
         allowMemberInvites: false,
@@ -621,6 +629,85 @@ class ChatService {
         onError?.(error);
       }
     );
+  }
+
+  /**
+   * Update chat name
+   */
+  async updateChatName(chatId: string, newName: string): Promise<Result<void>> {
+    try {
+      console.log('📝 Updating chat name:', chatId, 'to:', newName);
+      
+      const chatRef = doc(db, this.CHATS_COLLECTION, chatId);
+      await updateDoc(chatRef, {
+        name: newName,
+        updatedAt: serverTimestamp()
+      });
+
+      console.log('✅ Chat name updated successfully');
+      return {
+        success: true,
+        data: undefined
+      };
+
+    } catch (error: any) {
+      console.error('💥 Error updating chat name:', error);
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to update chat name',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to update chat name'
+        }))
+      };
+    }
+  }
+
+  /**
+   * Get user by ID (helper method for chat naming)
+   */
+  private async getUserById(userId: string): Promise<Result<{ email: string } | null>> {
+    try {
+      const userDoc = await getDoc(doc(db, this.USERS_COLLECTION, userId));
+      
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        return {
+          success: true,
+          data: { email: data.email || 'Unknown User' }
+        };
+      }
+      
+      return {
+        success: true,
+        data: null
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to get user',
+          originalError: error
+        }),
+        retryable: isRetryableError(createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: error.code || 'unknown',
+          message: error.message || 'Failed to get user'
+        }))
+      };
+    }
   }
 
   /**
