@@ -1,20 +1,22 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import MessageInput from '../components/MessageInput';
 import MessageList from '../components/MessageList';
+import PresenceIndicator from '../components/PresenceIndicator';
 import useMessages from '../hooks/useMessages';
+import { usePresence } from '../hooks/usePresence';
 import AuthService from '../services/auth';
 import ChatService from '../services/chat';
 import { Chat, Message, MessageType } from '../types';
@@ -35,6 +37,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
   const router = useRouter();
   const [chatData, setChatData] = useState<Chat | null>(chat || null);
   const [isLoadingChat, setIsLoadingChat] = useState(!chat);
+
+  // Presence data for chat participants
+  const { presence, isLoading: isPresenceLoading, error: presenceError } = usePresence(chatData);
 
   // Load chat data if not provided
   useEffect(() => {
@@ -227,9 +232,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
         
         <View style={styles.headerInfo}>
           <Text style={styles.chatName}>{getChatDisplayName()}</Text>
-          <Text style={styles.participantCount}>
-            {chatData?.participants?.length || 0} participants
-          </Text>
+          <View style={styles.participantInfo}>
+            <Text style={styles.participantCount}>
+              {chatData?.participants?.length || 0} participants
+            </Text>
+            {presence && presence.onlineCount > 0 && (
+              <View style={styles.presenceIndicatorContainer}>
+                <PresenceIndicator 
+                  onlineCount={presence.onlineCount}
+                  dotSize={6}
+                  spacing={2}
+                  maxIndividualDots={5}
+                  testID={`presence-indicator-chat-${chatId}`}
+                />
+              </View>
+            )}
+          </View>
         </View>
         
         <TouchableOpacity 
@@ -324,12 +342,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1C1C1E',
     letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  participantInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 1,
+    flex: 1,
   },
   participantCount: {
     fontSize: 13,
     color: '#8E8E93',
-    marginTop: 1,
     fontWeight: '400',
+    marginRight: 8,
+  },
+  presenceIndicatorContainer: {
+    marginLeft: 4,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   settingsButton: {
     width: 40,

@@ -41,21 +41,21 @@
   - [x] 2.5 Implement presence data caching for performance
   - [x] 2.6 Write unit tests for presence data integration
 
-- [ ] 3.0 Add Presence Indicators to Chat Cards (HomeScreen)
-  - [ ] 3.1 Modify HomeScreen to fetch presence data for each chat
-  - [ ] 3.2 Add PresenceIndicator component to chat card layout
-  - [ ] 3.3 Position dots on right side of chat cards
-  - [ ] 3.4 Implement overflow logic (5+ online users = ●+4 format)
-  - [ ] 3.5 Handle edge cases (no online users, missing data)
-  - [ ] 3.6 Test presence indicators in chat list scrolling
+- [x] 3.0 Add Presence Indicators to Chat Cards (HomeScreen)
+  - [x] 3.1 Modify HomeScreen to fetch presence data for each chat
+  - [x] 3.2 Add PresenceIndicator component to chat card layout
+  - [x] 3.3 Position dots on right side of chat cards
+  - [x] 3.4 Implement overflow logic (5+ online users = ●+4 format)
+  - [x] 3.5 Handle edge cases (no online users, missing data)
+  - [x] 3.6 Test presence indicators in chat list scrolling
 
-- [ ] 4.0 Add Presence Indicators to Chat Headers (ChatScreen)
-  - [ ] 4.1 Modify ChatScreen header to include presence data
-  - [ ] 4.2 Add PresenceIndicator component to chat header layout
-  - [ ] 4.3 Position dots after participant count, before settings button
-  - [ ] 4.4 Handle single participant chats (one dot when online)
-  - [ ] 4.5 Implement same overflow logic as chat cards
-  - [ ] 4.6 Ensure dots don't interfere with existing header elements
+- [x] 4.0 Add Presence Indicators to Chat Headers (ChatScreen)
+  - [x] 4.1 Modify ChatScreen header to include presence data
+  - [x] 4.2 Add PresenceIndicator component to chat header layout
+  - [x] 4.3 Position dots after participant count, before settings button
+  - [x] 4.4 Handle single participant chats (one dot when online)
+  - [x] 4.5 Implement same overflow logic as chat cards
+  - [x] 4.6 Ensure dots don't interfere with existing header elements
 
 - [ ] 5.0 Implement Offline Timeout Logic
   - [ ] 5.1 Create presence service for offline timeout management
