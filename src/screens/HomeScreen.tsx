@@ -177,7 +177,8 @@ const HomeScreen: React.FC = () => {
           onPress: async () => {
             try {
               await signOut();
-              router.replace('/login');
+              // Let AuthContext handle the UI change automatically
+              // No manual navigation needed - conditional rendering will show login screen
             } catch (error) {
               Alert.alert('Error', 'Failed to sign out');
             }
@@ -185,7 +186,7 @@ const HomeScreen: React.FC = () => {
         },
       ]
     );
-  }, [signOut, router]);
+  }, [signOut]);
 
   // Format timestamp
   const formatTimestamp = (timestamp: Date) => {
