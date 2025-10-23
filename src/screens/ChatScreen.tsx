@@ -145,15 +145,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
         const unreadMessageIds = messages
           .filter(message => 
             message.senderId !== currentUser.uid && 
-            !message.id.startsWith('temp_') // Exclude optimistic messages
+            !message.id.startsWith('temp_') && // Exclude optimistic messages
+            (!message.readBy || !message.readBy[currentUser.uid]) // Only unread messages
           )
           .map(message => message.id);
 
         if (unreadMessageIds.length === 0) {
+          console.log('📖 No unread messages to mark');
           return;
         }
 
-        console.log('📖 Marking', unreadMessageIds.length, 'messages as read');
+        console.log('📖 Marking', unreadMessageIds.length, 'unread messages as read:', unreadMessageIds);
         const result = await MessagingService.markMessagesAsRead(chatId, currentUser.uid, unreadMessageIds);
         
         if (result.success) {

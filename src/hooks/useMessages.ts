@@ -55,6 +55,8 @@ export const useMessages = ({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const currentUserRef = useRef(AuthService.getCurrentUser());
+  const lastReadMarkTime = useRef<number>(0);
+  const READ_MARK_THROTTLE = 1000; // 1 second throttle for real-time read marking
   
   // Initialize messages and real-time listener
   useEffect(() => {
@@ -101,8 +103,12 @@ export const useMessages = ({
           (newMessages) => {
             console.log('🔄 Real-time listener received messages:', newMessages.length);
             
-            // Note: Read marking is handled by ChatScreen effects to avoid race conditions
-            // The real-time listener should only handle message updates, not read marking
+            // Mark new messages as read when received (for messages not sent by current user)
+            const currentUser = currentUserRef.current;
+            const now = Date.now();
+            
+            // Throttle read marking to prevent excessive calls
+            const shouldMarkAsRead = currentUser && (now - lastReadMarkTime.current > READ_MARK_THROTTLE);
             
             // Merge with existing messages using enhanced deduplication
             setMessages(prevMessages => {
@@ -166,6 +172,25 @@ export const useMessages = ({
                 .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
               
               console.log('📝 Deduplicated messages:', combinedMessages.length, 'server:', newMessages.length, 'previous:', prevMessages.length);
+              
+              // Now handle read marking for truly new messages
+              if (shouldMarkAsRead) {
+                const existingMessageIds = new Set(prevMessages.map(msg => msg.id));
+                const trulyNewMessages = combinedMessages.filter(msg => 
+                  !existingMessageIds.has(msg.id) &&
+                  msg.senderId !== currentUser.uid && 
+                  !msg.id.startsWith('temp_') &&
+                  (!msg.readBy || !msg.readBy[currentUser.uid])
+                );
+                
+                if (trulyNewMessages.length > 0) {
+                  console.log('📖 Real-time: Marking', trulyNewMessages.length, 'truly new messages as read');
+                  // Mark as read immediately for new messages
+                  MessagingService.markMessagesAsRead(chatId, currentUser.uid, trulyNewMessages.map(msg => msg.id));
+                  lastReadMarkTime.current = now;
+                }
+              }
+              
               return combinedMessages;
             });
             setConnectionError(false);

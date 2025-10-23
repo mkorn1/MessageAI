@@ -84,7 +84,7 @@ const MessageList: React.FC<MessageListProps> = ({
         <MessageBubble
           message={item}
           isOwnMessage={isOwnMessage}
-          showTimestamp={!isOwnMessage || showTimestamp}
+          showTimestamp={true} // Always show timestamps for debugging
           showStatus={isOwnMessage}
           onPress={() => onMessagePress?.(item)}
           onLongPress={() => onMessageLongPress?.(item)}
@@ -201,9 +201,9 @@ const shouldShowTimestamp = (currentMessage: Message, previousMessage: Message |
   const currentTime = new Date(currentMessage.timestamp);
   const previousTime = new Date(previousMessage.timestamp);
   const timeDiff = currentTime.getTime() - previousTime.getTime();
-  const twoMinutes = 2 * 60 * 1000; // 2 minutes in milliseconds
+  const thirtySeconds = 30 * 1000; // 30 seconds in milliseconds
   
-  return timeDiff > twoMinutes;
+  return timeDiff > thirtySeconds;
 };
 
 const formatDateHeader = (timestamp: Date): string => {
