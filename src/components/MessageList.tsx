@@ -96,7 +96,7 @@ const MessageList: React.FC<MessageListProps> = ({
         />
       </View>
     );
-  }, [currentUserId, messages, onMessagePress, onMessageLongPress, getStatus]);
+  }, [currentUserId, messages, onMessagePress, onMessageLongPress, onRetryMessage, getStatus, totalParticipants, isGroupChat]);
 
   // Render loading indicator at top
   const renderHeader = useCallback(() => {
@@ -133,8 +133,15 @@ const MessageList: React.FC<MessageListProps> = ({
     );
   }, [isLoading]);
 
-  // Key extractor for FlatList
-  const keyExtractor = useCallback((item: Message) => item.id, []);
+  // Key extractor for FlatList - ensures truly unique keys
+  const keyExtractor = useCallback((item: Message) => {
+    // For optimistic messages, create a more unique key
+    if (item.id.startsWith('temp_')) {
+      return `${item.id}_${item.senderId}_${item.timestamp.getTime()}`;
+    }
+    // For real messages, use the ID as-is
+    return item.id;
+  }, []);
 
   // Handle end reached for pagination
   const handleEndReached = useCallback(() => {

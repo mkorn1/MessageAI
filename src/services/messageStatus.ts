@@ -252,6 +252,7 @@ export class MessageStatusService {
         batch.set(statusDocRef, statusData);
 
         // Also update the message document itself with readBy field
+        // This will trigger the real-time listener, but our deduplication logic should handle it
         const messageDocRef = doc(db, 'messages', messageId);
         batch.update(messageDocRef, {
           [`readBy.${userId}`]: serverTimestamp(),

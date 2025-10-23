@@ -73,7 +73,7 @@ export const useMessages = ({
       }
       unsubscribeAuth();
     };
-  }, [chatId]);
+  }, [chatId, initializeMessages]);
 
   // Initialize messages and set up real-time listener
   const initializeMessages = useCallback(async () => {
@@ -128,23 +128,60 @@ export const useMessages = ({
               }
             }
             
-            // Merge with existing optimistic messages
+            // Merge with existing messages using enhanced deduplication
             setMessages(prevMessages => {
-              // Remove ALL optimistic messages first to avoid duplicates
-              const nonOptimisticMessages = prevMessages.filter(msg => !msg.id.startsWith('temp_'));
+              // Create a comprehensive deduplication map
+              const messageMap = new Map<string, Message>();
               
-              // Create a map to avoid duplicates by message ID
-              const messageMap = new Map();
+              // Helper function to create a unique key for message matching
+              const createMessageKey = (msg: Message): string => {
+                // For optimistic messages, use content-based key
+                if (msg.id.startsWith('temp_')) {
+                  return `temp_${msg.senderId}_${msg.text}_${msg.timestamp.getTime()}`;
+                }
+                // For real messages, use the actual ID
+                return msg.id;
+              };
               
-              // Add server messages first (they take priority)
-              newMessages.forEach(msg => {
-                messageMap.set(msg.id, msg);
+              // Helper function to check if messages are duplicates
+              const areMessagesDuplicate = (msg1: Message, msg2: Message): boolean => {
+                // Same ID = definitely duplicate
+                if (msg1.id === msg2.id) return true;
+                
+                // Same content, sender, and timestamp (within 5 seconds) = likely duplicate
+                const timeDiff = Math.abs(msg1.timestamp.getTime() - msg2.timestamp.getTime());
+                return msg1.text === msg2.text && 
+                       msg1.senderId === msg2.senderId && 
+                       timeDiff < 5000; // 5 seconds tolerance
+              };
+              
+              // Add all existing messages first
+              prevMessages.forEach(msg => {
+                const key = createMessageKey(msg);
+                messageMap.set(key, msg);
               });
               
-              // Add non-optimistic messages only if they don't exist in server messages
-              nonOptimisticMessages.forEach(msg => {
-                if (!messageMap.has(msg.id)) {
-                  messageMap.set(msg.id, msg);
+              // Process new server messages
+              newMessages.forEach(newMsg => {
+                let isDuplicate = false;
+                
+                // Check against existing messages
+                for (const [key, existingMsg] of messageMap.entries()) {
+                  if (areMessagesDuplicate(newMsg, existingMsg)) {
+                    // Server message takes priority over optimistic message
+                    if (existingMsg.id.startsWith('temp_') && !newMsg.id.startsWith('temp_')) {
+                      messageMap.set(key, newMsg);
+                      console.log('🔄 Replaced optimistic message with server message:', existingMsg.id, '→', newMsg.id);
+                    }
+                    isDuplicate = true;
+                    break;
+                  }
+                }
+                
+                // Only add if not a duplicate
+                if (!isDuplicate) {
+                  const key = createMessageKey(newMsg);
+                  messageMap.set(key, newMsg);
                 }
               });
               
@@ -152,7 +189,7 @@ export const useMessages = ({
               const combinedMessages = Array.from(messageMap.values())
                 .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
               
-              console.log('📝 Combined messages:', combinedMessages.length, 'server:', newMessages.length, 'non-optimistic:', nonOptimisticMessages.length);
+              console.log('📝 Deduplicated messages:', combinedMessages.length, 'server:', newMessages.length, 'previous:', prevMessages.length);
               return combinedMessages;
             });
             setConnectionError(false);
@@ -230,13 +267,27 @@ export const useMessages = ({
         console.log('✅ Message sent successfully, replacing optimistic message');
         console.log('🔄 Replacing message:', optimisticMessage.id, 'with server data:', result.data);
         setMessages(prev => {
-          // Remove the optimistic message and add the real message with SENT status
-          const filteredMessages = prev.filter(msg => msg.id !== optimisticMessage.id);
+          // Create a map for deduplication
+          const messageMap = new Map<string, Message>();
+          
+          // Add all existing messages except the optimistic one
+          prev.forEach(msg => {
+            if (msg.id !== optimisticMessage.id) {
+              messageMap.set(msg.id, msg);
+            }
+          });
+          
+          // Add the real message from server
           const realMessage = { 
             ...result.data, 
             timestamp: result.data.timestamp || new Date()
           };
-          const newMessages = [...filteredMessages, realMessage].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          messageMap.set(realMessage.id, realMessage);
+          
+          // Convert back to array and sort by timestamp
+          const newMessages = Array.from(messageMap.values())
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          
           console.log('📝 Updated messages count:', newMessages.length);
           return newMessages;
         });
@@ -280,7 +331,29 @@ export const useMessages = ({
       const result = await MessagingService.getMessages(chatId, undefined, batchSize);
       
       if (result.success) {
-        setMessages(prev => [...result.data, ...prev]);
+        setMessages(prev => {
+          // Create a map for deduplication
+          const messageMap = new Map<string, Message>();
+          
+          // Add existing messages
+          prev.forEach(msg => {
+            messageMap.set(msg.id, msg);
+          });
+          
+          // Add new messages (avoiding duplicates)
+          result.data.forEach(newMsg => {
+            if (!messageMap.has(newMsg.id)) {
+              messageMap.set(newMsg.id, newMsg);
+            }
+          });
+          
+          // Convert back to array and sort by timestamp
+          const combinedMessages = Array.from(messageMap.values())
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          
+          return combinedMessages;
+        });
+        
         if (result.data.length > 0) {
           lastMessageIdRef.current = result.data[0].id;
         }

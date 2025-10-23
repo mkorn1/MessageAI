@@ -294,6 +294,11 @@ class MessagingService {
 
   /**
    * Set up real-time listener for messages in a chat
+   * Note: This listener will receive updates when:
+   * - New messages are added
+   * - Messages are marked as read (readBy field updates)
+   * - Message status changes
+   * The client should handle deduplication of these updates
    */
   subscribeToMessages(
     chatId: string,
