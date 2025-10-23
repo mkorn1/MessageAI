@@ -55,8 +55,6 @@ export const useMessages = ({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const currentUserRef = useRef(AuthService.getCurrentUser());
-  const lastReadMarkTime = useRef<number>(0);
-  const READ_MARK_THROTTLE = 500; // 500ms throttle - more responsive for active conversations
   
   // Initialize messages and real-time listener
   useEffect(() => {
@@ -103,30 +101,8 @@ export const useMessages = ({
           (newMessages) => {
             console.log('🔄 Real-time listener received messages:', newMessages.length);
             
-            // Mark messages as read when received (for messages not sent by current user)
-            const currentUser = currentUserRef.current;
-            if (currentUser) {
-              const now = Date.now();
-              
-              // Throttle read marking to prevent excessive updates
-              if (now - lastReadMarkTime.current > READ_MARK_THROTTLE) {
-                const unreadMessageIds = newMessages
-                  .filter(msg => 
-                    msg.senderId !== currentUser.uid && 
-                    !msg.id.startsWith('temp_') &&
-                    (!msg.readBy || !msg.readBy[currentUser.uid])
-                  )
-                  .map(msg => msg.id);
-                
-                if (unreadMessageIds.length > 0) {
-                  console.log('📖 Marking', unreadMessageIds.length, 'messages as read:', unreadMessageIds);
-                  MessagingService.markMessagesAsRead(chatId, currentUser.uid, unreadMessageIds);
-                  lastReadMarkTime.current = now;
-                } else {
-                  console.log('📖 No unread messages to mark');
-                }
-              }
-            }
+            // Note: Read marking is handled by ChatScreen effects to avoid race conditions
+            // The real-time listener should only handle message updates, not read marking
             
             // Merge with existing messages using enhanced deduplication
             setMessages(prevMessages => {

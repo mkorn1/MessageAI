@@ -34,22 +34,22 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 }) => {
   // Determine the effective status based on message data and readBy field
   const getEffectiveStatus = (): MessageStatusType => {
-    // For own messages, prioritize the status prop from useMessageStatuses hook
+    // For own messages, check readBy field first for read receipts
     if (isOwnMessage) {
-      // If we have a status from the message status service, use it
-      if (status && status !== MessageStatusType.SENDING) {
-        return status;
-      }
-      
-      // Fallback to readBy field for backward compatibility
+      // First check if message has been read by others (most reliable for read receipts)
       if (currentUserId) {
         const readByOthers = message.readBy && Object.keys(message.readBy).some(userId => userId !== currentUserId);
         if (readByOthers) {
           return MessageStatusType.READ;
         }
-        return MessageStatusType.SENT;
       }
       
+      // Then check the status from message status service for delivery status
+      if (status && status !== MessageStatusType.SENDING) {
+        return status;
+      }
+      
+      // Default to SENT if no specific status
       return MessageStatusType.SENT;
     }
     
