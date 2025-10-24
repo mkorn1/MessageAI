@@ -1,3 +1,4 @@
+import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -38,6 +39,8 @@ class NotificationService {
   private maxRetries = 3;
   private permissionCallbacks: Set<(hasPermissions: boolean) => void> = new Set();
   private inAppNotificationCallbacks: Set<(notification: any) => void> = new Set();
+  private lastRegistration: { userId: string; token: string } | null = null;
+  private registrationInProgress = false; // Prevent duplicate in-flight registrations
 
   /**
    * Add in-app notification callback
@@ -95,6 +98,8 @@ class NotificationService {
 
   /**
    * Set up error handling and retry callbacks
+   * NOTE: This is now called from initializeWithPermissions() to ensure
+   * it only activates after permissions are granted and token is obtained
    */
   private setupErrorHandling(): void {
     console.log('🔔 NotificationService: Setting up error handling');
@@ -123,6 +128,7 @@ class NotificationService {
   /**
    * Initialize the notification service
    * This should be called when the app starts
+   * NOTE: Error handling/retry setup moved to initializeWithPermissions()
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
@@ -132,9 +138,6 @@ class NotificationService {
 
     try {
       console.log('🔔 NotificationService: Initializing...');
-      
-      // Set up error handling retry callbacks
-      this.setupErrorHandling();
       
       // Set up notification listeners (for cold start handling)
       this.setupNotificationListeners();
@@ -156,6 +159,9 @@ class NotificationService {
   async initializeWithPermissions(): Promise<void> {
     try {
       console.log('🔔 NotificationService: Setting up with permissions...');
+      
+      // Set up error handling and retry callbacks (moved from initialize())
+      this.setupErrorHandling();
       
       // Configure notification behavior for foreground
       await Notifications.setNotificationHandler({
@@ -206,6 +212,12 @@ class NotificationService {
    */
   async getFCMToken(): Promise<string | null> {
     try {
+      // CRITICAL: Skip on simulator - iOS Simulator cannot receive push tokens
+      if (!Device.isDevice) {
+        console.warn('🔔 NotificationService: Simulator detected — skipping token retrieval');
+        return null;
+      }
+
       console.log('🔔 NotificationService: Getting FCM token...');
       
       const token = await Notifications.getExpoPushTokenAsync({
@@ -227,25 +239,41 @@ class NotificationService {
    */
   async registerTokenWithUser(userId: string): Promise<boolean> {
     try {
-      if (!this.fcmToken) {
-        console.warn('🔔 NotificationService: No FCM token available');
-        
-        // Log error and add to retry queue
-        const error = notificationErrorService.logError(
-          'TOKEN_INVALID',
-          'No FCM token available for registration',
-          { userId }
-        );
-        
-        notificationErrorService.addToRetryQueue(
-          { type: 'token_registration', userId },
-          error
-        );
-        
+      // Guard 1: Skip on simulator
+      if (!Device.isDevice) {
+        console.warn('🔔 NotificationService: Simulator detected — skip token registration');
         return false;
       }
 
+      // Guard 2: Validate token
+      if (!this.fcmToken || typeof this.fcmToken !== 'string' || this.fcmToken.trim() === '') {
+        console.warn('🔔 NotificationService: No valid token; skip registration');
+        return false;
+      }
+
+      // Guard 3: Validate userId
+      if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        console.warn('🔔 NotificationService: No authenticated user; skip registration');
+        return false;
+      }
+
+      // Guard 4: Prevent duplicate in-flight registrations
+      if (this.registrationInProgress) {
+        console.log('🔔 NotificationService: Registration already in progress, skipping duplicate call');
+        return false;
+      }
+
+      // Guard 5: Idempotency - skip if unchanged
+      const currentRegistration = `${userId}:${this.fcmToken}`;
+      const lastRegistration = this.lastRegistration ? `${this.lastRegistration.userId}:${this.lastRegistration.token}` : null;
+      
+      if (lastRegistration === currentRegistration) {
+        console.log('🔔 NotificationService: Token already registered for this user, skipping duplicate');
+        return true; // Return true since it's already registered
+      }
+
       console.log('🔔 NotificationService: Registering token for user:', userId);
+      this.registrationInProgress = true;
 
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, {
@@ -257,10 +285,15 @@ class NotificationService {
         }
       });
 
+      // Cache successful registration
+      this.lastRegistration = { userId, token: this.fcmToken };
+      this.registrationInProgress = false;
+
       console.log('🔔 NotificationService: Token registered successfully');
       return true;
       
     } catch (error) {
+      this.registrationInProgress = false;
       console.error('🔔 NotificationService: Failed to register token:', error);
       
       // Log error and add to retry queue
@@ -953,6 +986,8 @@ class NotificationService {
     this.fcmToken = null;
     this.isInitialized = false;
     this.retryCount = 0;
+    this.lastRegistration = null;
+    this.registrationInProgress = false;
   }
 }
 

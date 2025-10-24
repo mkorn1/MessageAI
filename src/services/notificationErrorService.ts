@@ -26,11 +26,17 @@ export interface NotificationRetryQueue {
 
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
-  baseDelay: 1000, // 1 second
+  baseDelay: 500, // 500ms - more reasonable starting point
   maxDelay: 30000, // 30 seconds
   backoffMultiplier: 2,
   jitter: true,
 };
+
+// Non-retryable error types that should not be added to retry queue
+const NON_RETRYABLE_ERRORS = new Set<NotificationError['type']>([
+  'TOKEN_INVALID',
+  'PERMISSION_DENIED',
+]);
 
 class NotificationErrorService {
   private errors: Map<string, NotificationError> = new Map();
@@ -72,6 +78,13 @@ class NotificationErrorService {
   }
 
   /**
+   * Check if an error is retryable
+   */
+  isRetryable(error: NotificationError): boolean {
+    return !NON_RETRYABLE_ERRORS.has(error.type);
+  }
+
+  /**
    * Add notification to retry queue
    */
   addToRetryQueue(
@@ -79,6 +92,12 @@ class NotificationErrorService {
     error: NotificationError,
     customDelay?: number
   ): void {
+    // Don't retry non-retryable errors (TOKEN_INVALID, PERMISSION_DENIED)
+    if (!this.isRetryable(error)) {
+      console.warn('🔔 NotificationErrorService: Error type not retryable:', error.type, error.message);
+      return;
+    }
+
     const delay = customDelay || this.calculateRetryDelay(error.retryCount);
     
     const retryItem: NotificationRetryQueue = {
@@ -97,11 +116,13 @@ class NotificationErrorService {
 
   /**
    * Calculate retry delay with exponential backoff
+   * Formula: base * 2^attempt, capped at maxDelay
    */
   private calculateRetryDelay(retryCount: number): number {
+    // Calculate exponential backoff: 500ms * 2^attempt
     let delay = this.retryConfig.baseDelay * Math.pow(this.retryConfig.backoffMultiplier, retryCount);
     
-    // Cap at max delay
+    // Cap at max delay (30 seconds)
     delay = Math.min(delay, this.retryConfig.maxDelay);
     
     // Add jitter to prevent thundering herd

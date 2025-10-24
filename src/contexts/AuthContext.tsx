@@ -29,32 +29,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const previousUserRef = useRef<User | null>(null);
+  const hasAttemptedTokenRegistration = useRef(false);
   
   // Notification permissions hook
   const {
+    hasPermissions,
     showPermissionModal,
     requestPermissions,
     skipPermissions,
   } = useNotificationPermissions();
 
+  // Initialize notification service once on mount
+  useEffect(() => {
+    console.log('🔐 AuthContext: Initializing notification service');
+    notificationService.initialize();
+  }, []);
+
+  // Listen to authentication state changes
   useEffect(() => {
     console.log('🔐 AuthContext: Setting up auth state listener');
     
-    // Initialize notification service
-    notificationService.initialize();
-    
-    // Listen to authentication state changes
     const unsubscribe = AuthService.onAuthStateChanged(async (newUser) => {
       console.log('🔐 AuthContext: Auth state changed:', newUser ? `User ${newUser.uid}` : 'No user');
       
       if (newUser) {
-        // User logged in - register FCM token with retry
-        console.log('🔔 AuthContext: User logged in, registering FCM token');
-        await notificationService.registerTokenWithUserWithRetry(newUser.uid);
-        
-        // Load notification preferences
+        // User logged in - load notification preferences
         console.log('🔔 AuthContext: Loading notification preferences');
         await notificationPreferencesService.loadPreferences(newUser.uid);
+        
+        // Reset registration flag when user changes
+        if (previousUserRef.current?.uid !== newUser.uid) {
+          hasAttemptedTokenRegistration.current = false;
+        }
       } else if (previousUserRef.current) {
         // User logged out - remove FCM token
         console.log('🔔 AuthContext: User logged out, removing FCM token');
@@ -63,6 +69,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Clear notification preferences
         console.log('🔔 AuthContext: Clearing notification preferences');
         notificationPreferencesService.clearListeners();
+        
+        // Reset registration flag
+        hasAttemptedTokenRegistration.current = false;
       }
       
       previousUserRef.current = newUser;
@@ -82,6 +91,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return unsubscribe;
   }, []);
+
+  // Register token ONLY when both user is authenticated AND permissions are granted
+  useEffect(() => {
+    const registerToken = async () => {
+      if (!user || !hasPermissions || hasAttemptedTokenRegistration.current) {
+        return;
+      }
+
+      console.log('🔔 AuthContext: User authenticated AND permissions granted, registering FCM token');
+      hasAttemptedTokenRegistration.current = true;
+
+      // Get token first
+      const token = await notificationService.getFCMToken();
+      
+      if (token) {
+        // Then register it with the user
+        await notificationService.registerTokenWithUser(user.uid);
+      } else {
+        console.warn('🔔 AuthContext: Failed to get FCM token, skipping registration');
+      }
+    };
+
+    registerToken();
+  }, [user, hasPermissions]);
 
   // Debug logging for state changes
   useEffect(() => {
