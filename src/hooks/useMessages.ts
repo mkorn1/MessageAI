@@ -7,9 +7,9 @@ import notificationService from '../services/notificationService';
 import { AppError, Message, MessageType } from '../types';
 import { MessageStatusType } from '../types/messageStatus';
 import {
-    deduplicateMessages,
-    getMessagesFromOthers,
-    getMessagesToMarkAsRead
+  deduplicateMessages,
+  getMessagesFromOthers,
+  getMessagesToMarkAsRead
 } from '../utils/messageDeduplication';
 
 // EMERGENCY FIX: Add console throttling to prevent spam
@@ -79,6 +79,7 @@ export const useMessages = ({
   
   // AI Analysis tracking
   const analyzedMessagesRef = useRef<Set<string>>(new Set());
+  const aiAnalysisTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   
   // Trigger AI analysis for a message
   const triggerAIAnalysis = useCallback(async (message: Message, chatContext: Message[], userId: string) => {
@@ -97,9 +98,20 @@ export const useMessages = ({
       return;
     }
     
+    // Skip if analysis is already in progress (debounce)
+    if (aiAnalysisTimeoutRef.current.has(message.id)) {
+      return;
+    }
+    
     try {
       console.log('🤖 Triggering AI analysis for message:', message.id);
       analyzedMessagesRef.current.add(message.id);
+      
+      // Set a timeout to prevent rapid re-analysis
+      const timeout = setTimeout(() => {
+        aiAnalysisTimeoutRef.current.delete(message.id);
+      }, 5000); // 5 second cooldown
+      aiAnalysisTimeoutRef.current.set(message.id, timeout);
       
       // Send to n8n webhook for analysis
       const result = await n8nWebhookService.sendMessageAnalysis(message, chatContext, userId);
@@ -201,9 +213,13 @@ export const useMessages = ({
                   });
 
                   // Trigger AI analysis for new messages (non-blocking)
-                  triggerAIAnalysis(message, result.messages, currentUser.uid).catch(() => {
-                    // Silent fail for non-critical AI analysis
-                  });
+                  // Only analyze truly new messages, not updated ones
+                  // TEMPORARILY DISABLED to prevent infinite loop - re-enable after testing
+                  // if (result.newMessages.includes(message)) {
+                  //   triggerAIAnalysis(message, result.messages, currentUser.uid).catch(() => {
+                  //     // Silent fail for non-critical AI analysis
+                  //   });
+                  // }
                 });
               }
               
@@ -251,6 +267,12 @@ export const useMessages = ({
         unsubscribeRef.current();
       }
       unsubscribeAuth();
+      
+      // Cleanup AI analysis timeouts
+      aiAnalysisTimeoutRef.current.forEach(timeout => {
+        clearTimeout(timeout);
+      });
+      aiAnalysisTimeoutRef.current.clear();
     };
   }, [chatId, initializeMessages]);
 

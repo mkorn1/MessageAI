@@ -32,17 +32,6 @@ export const useMessageStatuses = (messageIds: string[]) => {
     }
   });
 
-  // Filter message IDs to only track those that need status updates
-  const getRelevantMessageIds = useCallback((allMessageIds: string[]): string[] => {
-    // Track all messages for status updates, including READ status for read receipts
-    // Only skip messages that are in FAILED state (final error state)
-    return allMessageIds.filter(messageId => {
-      const currentStatus = statuses[messageId];
-      // Track all statuses except FAILED (which is a final error state)
-      return currentStatus !== MessageStatusType.FAILED;
-    });
-  }, []); // CRITICAL FIX: Remove statuses dependency to prevent infinite loop
-
   // Debounced status update function
   const debouncedUpdateStatuses = useCallback((newStatuses: { [messageId: string]: MessageStatusType }) => {
     // Clear existing timeout
@@ -80,13 +69,9 @@ export const useMessageStatuses = (messageIds: string[]) => {
   }, []);
 
   const fetchStatuses = useCallback(async () => {
-    // CRITICAL FIX: Use current statuses directly instead of getRelevantMessageIds to prevent infinite loop
-    const relevantMessageIds = messageIds.filter(messageId => {
-      const currentStatus = statuses[messageId];
-      return currentStatus !== MessageStatusType.FAILED;
-    });
-    
-    if (relevantMessageIds.length === 0) {
+    // CRITICAL FIX: Don't filter by current statuses to prevent infinite loop
+    // Just fetch statuses for all provided messageIds
+    if (messageIds.length === 0) {
       setStatuses({});
       return;
     }
@@ -95,7 +80,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
     setError(null);
 
     try {
-      const result = await messageStatusService.getMessageStatuses(relevantMessageIds);
+      const result = await messageStatusService.getMessageStatuses(messageIds);
       if (result.success) {
         const statusMap: { [messageId: string]: MessageStatusType } = {};
         Object.values(result.data).forEach(status => {
@@ -110,7 +95,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
     } finally {
       setLoading(false);
     }
-  }, [messageIds]); // CRITICAL FIX: Remove getRelevantMessageIds dependency
+  }, [messageIds]); // Only depend on messageIds
 
   useEffect(() => {
     fetchStatuses();
@@ -118,16 +103,12 @@ export const useMessageStatuses = (messageIds: string[]) => {
 
   // Subscribe to status changes
   useEffect(() => {
-    // CRITICAL FIX: Use current statuses directly to prevent infinite loop
-    const relevantMessageIds = messageIds.filter(messageId => {
-      const currentStatus = statuses[messageId];
-      return currentStatus !== MessageStatusType.FAILED;
-    });
-    
-    if (relevantMessageIds.length === 0) return;
+    // CRITICAL FIX: Don't filter by current statuses to prevent infinite loop
+    // Just subscribe to all provided messageIds
+    if (messageIds.length === 0) return;
 
     const unsubscribe = messageStatusService.subscribeToMessageStatuses(
-      relevantMessageIds,
+      messageIds, // Subscribe to all messageIds, let the service handle filtering
       (newStatuses) => {
         // Convert MessageStatus objects to status map
         const statusMap: { [messageId: string]: MessageStatusType } = {};
@@ -144,7 +125,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
     );
 
     return unsubscribe;
-  }, [messageIds, debouncedUpdateStatuses]); // CRITICAL FIX: Remove getRelevantMessageIds dependency
+  }, [messageIds, debouncedUpdateStatuses]); // Only depend on messageIds and debouncedUpdateStatuses
 
   const getStatus = useCallback((messageId: string): MessageStatusType => {
     return statuses[messageId] || MessageStatusType.SENDING;

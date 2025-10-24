@@ -120,6 +120,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     };
   }, [chatId]);
 
+  // Stable error handler to prevent unnecessary re-renders
+  const handleMessageError = useCallback((error: any) => {
+    console.error('Message error:', error);
+  }, []);
+
   // Use the custom hook for message management
   const {
     messages,
@@ -141,9 +146,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     chatId,
     enableRealTime: false, // EMERGENCY FIX: Temporarily disable to stop console spam
     batchSize: 50,
-    onError: (error) => {
-      console.error('Message error:', error);
-    }
+    onError: handleMessageError
   });
 
   // Mark messages as read when chat screen mounts or becomes active
