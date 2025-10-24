@@ -9,6 +9,7 @@ import appStateService from './appStateService';
 import deepLinkService from './deepLinkService';
 import notificationErrorService from './notificationErrorService';
 import notificationPreferencesService from './notificationPreferencesService';
+import notificationStorageService from './notificationStorage';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -465,7 +466,7 @@ class NotificationService {
   /**
    * Show custom in-app notification (for foreground notifications)
    */
-  private showInAppNotification(notification: Notifications.Notification): void {
+  private async showInAppNotification(notification: Notifications.Notification): Promise<void> {
     try {
       const data = notification.request.content.data as unknown as NotificationData;
       
@@ -492,10 +493,13 @@ class NotificationService {
         return;
       }
 
-      // Notify callbacks to show in-app notification
+      // Store notification in local storage for notifications tab
+      await notificationStorageService.storeNotification(payload);
+
+      // Notify callbacks to show in-app notification (for banner display)
       this.notifyInAppNotificationCallbacks(payload);
       
-      console.log('🔔 NotificationService: In-app notification triggered:', {
+      console.log('🔔 NotificationService: In-app notification triggered and stored:', {
         title: payload.title,
         body: payload.body,
         chatId: data.chatId,
@@ -942,8 +946,22 @@ class NotificationService {
       // Fetch sender and chat information for proper notification formatting
       const notificationData = await this.fetchNotificationData(messageData);
       
+      // Format notification payload for storage and display
+      const payload = formatNotificationPayload(
+        notificationData.senderName,
+        messageData.messageText,
+        notificationData.chatName,
+        notificationData.chatType,
+        messageData.chatId,
+        messageData.messageId,
+        messageData.senderId
+      );
+
+      // Store notification in local storage for notifications tab
+      await notificationStorageService.storeNotification(payload);
+
       // Show in-app notification with proper data
-      this.showInAppNotification({
+      await this.showInAppNotification({
         request: {
           content: {
             title: notificationData.title,

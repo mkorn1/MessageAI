@@ -68,7 +68,7 @@
   - [x] 4.10 Integrate foreground notification handler with existing NotificationPermissionsModal flow
 
 - [ ] 5. Test notifications on physical devices and handle edge cases
-  - [ ] 5.1 Test existing notification permissions modal flow on iOS device via Expo Go
+  - [x] 5.1 Test existing notification permissions modal flow on iOS device via Expo Go
   - [ ] 5.2 Test existing notification permissions modal flow on Android device via Expo Go
   - [ ] 5.3 Test basic notification flow (send message → receive notification)
   - [ ] 5.4 Test smart suppression (no notification when in active chat)

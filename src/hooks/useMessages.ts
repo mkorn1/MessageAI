@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthService from '../services/auth';
+import messageNotificationService from '../services/messageNotificationService';
 import MessagingService from '../services/messaging';
 import notificationService from '../services/notificationService';
 import { AppError, Message, MessageType } from '../types';
+import { MessageStatusType } from '../types/messageStatus';
 
 interface UseMessagesOptions {
   chatId: string;
@@ -35,7 +37,7 @@ interface UseMessagesReturn {
   // Utilities
   clearError: () => void;
   getMessageById: (messageId: string) => Message | undefined;
-  getMessagesByStatus: (status: MessageStatus) => Message[];
+  getMessagesByStatus: (status: MessageStatusType) => Message[];
 }
 
 export const useMessages = ({
@@ -60,23 +62,6 @@ export const useMessages = ({
   const lastReadMarkTime = useRef<number>(0);
   const READ_MARK_THROTTLE = 1000; // 1 second throttle for real-time read marking
   
-  // Initialize messages and real-time listener
-  useEffect(() => {
-    initializeMessages();
-    
-    // Update current user reference
-    const unsubscribeAuth = AuthService.onAuthStateChanged((user) => {
-      currentUserRef.current = user;
-    });
-    
-    return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
-      unsubscribeAuth();
-    };
-  }, [chatId, initializeMessages]);
-
   // Initialize messages and set up real-time listener
   const initializeMessages = useCallback(async () => {
     try {
@@ -202,14 +187,25 @@ export const useMessages = ({
               const existingMessageIds = new Set(prevMessages.map(msg => msg.id));
               const newMessagesFromOthers = combinedMessages.filter(msg => 
                 !existingMessageIds.has(msg.id) &&
-                msg.senderId !== currentUser.uid && 
+                msg.senderId !== currentUser?.uid && 
                 !msg.id.startsWith('temp_')
               );
               
-              if (newMessagesFromOthers.length > 0) {
+              if (newMessagesFromOthers.length > 0 && currentUser) {
                 console.log('🔔 useMessages: New messages from others detected:', newMessagesFromOthers.length);
-                // Trigger notification checks for each new message
+                
+                // Process notifications for new messages
                 newMessagesFromOthers.forEach(message => {
+                  // Create notification in storage for notification center
+                  messageNotificationService.processNewMessage(
+                    message,
+                    currentUser.uid,
+                    chatId
+                  ).catch(error => {
+                    console.log('⚠️ Message notification processing failed (non-critical):', error);
+                  });
+
+                  // Trigger existing notification checks for push notifications
                   notificationService.checkAndSendNotification({
                     chatId: message.chatId,
                     messageId: message.id,
@@ -233,7 +229,8 @@ export const useMessages = ({
             setError({
               code: 'realtime-error',
               message: 'Connection lost. Messages may not update in real-time.',
-              details: error
+              details: error,
+              timestamp: new Date()
             });
           }
         );
@@ -243,7 +240,8 @@ export const useMessages = ({
       const error: AppError = {
         code: 'initialization-error',
         message: 'Failed to load messages',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -251,6 +249,23 @@ export const useMessages = ({
       setIsLoading(false);
     }
   }, [chatId, enableRealTime, batchSize, onError]);
+
+  // Initialize messages and real-time listener
+  useEffect(() => {
+    initializeMessages();
+    
+    // Update current user reference
+    const unsubscribeAuth = AuthService.onAuthStateChanged((user) => {
+      currentUserRef.current = user;
+    });
+    
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+      unsubscribeAuth();
+    };
+  }, [chatId, initializeMessages]);
 
   // Send a message
   const sendMessage = useCallback(async (text: string, messageType: MessageType = MessageType.TEXT) => {
@@ -260,7 +275,8 @@ export const useMessages = ({
     if (!currentUser) {
       const error: AppError = {
         code: 'auth-error',
-        message: 'You must be logged in to send messages'
+        message: 'You must be logged in to send messages',
+        timestamp: new Date()
       };
       console.log('❌ No current user found');
       setError(error);
@@ -268,9 +284,11 @@ export const useMessages = ({
       return;
     }
 
+    let optimisticMessage: Message | null = null;
+
     try {
       // Create optimistic message with a more unique ID
-      const optimisticMessage: Message = {
+      optimisticMessage = {
         id: `temp_${currentUser.uid}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         text,
         senderId: currentUser.uid,
@@ -281,7 +299,7 @@ export const useMessages = ({
 
       console.log('📝 Adding optimistic message');
       // Add optimistic message immediately
-      setMessages(prev => [...prev, optimisticMessage]);
+      setMessages(prev => [...prev, optimisticMessage!]);
 
       // Send to server
       console.log('🚀 Sending message to server');
@@ -298,14 +316,14 @@ export const useMessages = ({
       if (result.success) {
         // Replace optimistic message with real message from server
         console.log('✅ Message sent successfully, replacing optimistic message');
-        console.log('🔄 Replacing message:', optimisticMessage.id, 'with server data:', result.data);
+        console.log('🔄 Replacing message:', optimisticMessage?.id, 'with server data:', result.data);
         setMessages(prev => {
           // Create a map for deduplication
           const messageMap = new Map<string, Message>();
           
           // Add all existing messages except the optimistic one
           prev.forEach(msg => {
-            if (msg.id !== optimisticMessage.id) {
+            if (optimisticMessage && msg.id !== optimisticMessage.id) {
               messageMap.set(msg.id, msg);
             }
           });
@@ -340,7 +358,9 @@ export const useMessages = ({
       } else {
         // Remove optimistic message and show error
         console.log('❌ Message send failed:', result.error);
-        setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+        if (optimisticMessage) {
+          setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage!.id));
+        }
         setError(result.error);
         onError?.(result.error);
       }
@@ -348,11 +368,14 @@ export const useMessages = ({
     } catch (err) {
       // Remove optimistic message
       console.log('💥 Exception during message send:', err);
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+      if (optimisticMessage) {
+        setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage!.id));
+      }
       const error: AppError = {
         code: 'send-error',
         message: 'Failed to send message. Please try again.',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -411,7 +434,8 @@ export const useMessages = ({
       const error: AppError = {
         code: 'load-more-error',
         message: 'Failed to load more messages',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -452,7 +476,8 @@ export const useMessages = ({
       const error: AppError = {
         code: 'retry-error',
         message: 'Failed to retry message',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -480,7 +505,8 @@ export const useMessages = ({
       const error: AppError = {
         code: 'edit-error',
         message: 'Failed to edit message',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -508,7 +534,8 @@ export const useMessages = ({
       const error: AppError = {
         code: 'delete-error',
         message: 'Failed to delete message',
-        details: err
+        details: err,
+        timestamp: new Date()
       };
       setError(error);
       onError?.(error);
@@ -525,10 +552,13 @@ export const useMessages = ({
     return messages.find(msg => msg.id === messageId);
   }, [messages]);
 
-  // Get messages by status
-  const getMessagesByStatus = useCallback((status: MessageStatus): Message[] => {
-    return messages.filter(msg => msg.status === status);
-  }, [messages]);
+  // Get messages by status (this would need to be implemented with the message status service)
+  const getMessagesByStatus = useCallback((status: MessageStatusType): Message[] => {
+    // Note: This would require integration with messageStatusService to get status information
+    // For now, return empty array as status is tracked separately
+    console.log('getMessagesByStatus called with status:', status);
+    return [];
+  }, []);
 
   // Mark messages as read and trigger notification updates
   const markMessagesAsRead = useCallback(async (messageIds: string[]) => {

@@ -8,6 +8,7 @@ import {
     View,
 } from 'react-native';
 import { IconSymbol } from '../../components/ui/icon-symbol';
+import NotificationList from '../../src/components/NotificationList';
 import { useAuth } from '../../src/contexts/AuthContext';
 
 const NotificationsScreen: React.FC = () => {
@@ -20,15 +21,12 @@ const NotificationsScreen: React.FC = () => {
   };
 
   const renderNotificationsContent = () => (
-    <View style={styles.contentContainer}>
-      <View style={styles.emptyState}>
-        <IconSymbol name="bell.fill" size={48} color="#8E8E93" />
-        <Text style={styles.emptyStateTitle}>No notifications yet</Text>
-        <Text style={styles.emptyStateText}>
-          You'll see notifications here when you receive new messages
-        </Text>
-      </View>
-    </View>
+    <NotificationList 
+      onNotificationPress={(notification) => {
+        console.log('🔔 Notification pressed:', notification.id);
+        // Additional handling can be added here if needed
+      }}
+    />
   );
 
   const renderTodosContent = () => (
