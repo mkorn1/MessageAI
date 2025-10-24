@@ -118,5 +118,77 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false; // Only server-side functions can write
     }
+    
+    // AI Suggestions security rules
+    match /aiSuggestions/{suggestionId} {
+      // Users can read only their own suggestions
+      allow read: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      
+      // Users can create suggestions for themselves
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId &&
+        // Validate required fields
+        request.resource.data.keys().hasAll(['userId', 'chatId', 'messageId', 'type', 'status', 'title', 'description', 'metadata', 'createdAt']) &&
+        // Validate field types and constraints
+        request.resource.data.userId is string &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.chatId is string &&
+        request.resource.data.messageId is string &&
+        request.resource.data.type in ['calendar_event', 'decision_summary', 'priority_flag', 'rsvp_tracking', 'deadline_reminder', 'suggested_response'] &&
+        request.resource.data.status in ['pending', 'confirmed', 'rejected', 'executed'] &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.title.size() <= 200 &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 1000 &&
+        request.resource.data.metadata is map &&
+        request.resource.data.createdAt is timestamp &&
+        // Validate metadata constraints
+        (!('confidence' in request.resource.data.metadata) || 
+         (request.resource.data.metadata.confidence is number && 
+          request.resource.data.metadata.confidence >= 0 && 
+          request.resource.data.metadata.confidence <= 1)) &&
+        (!('priorityLevel' in request.resource.data.metadata) || 
+         (request.resource.data.metadata.priorityLevel is number && 
+          request.resource.data.metadata.priorityLevel >= 1 && 
+          request.resource.data.metadata.priorityLevel <= 5));
+      
+      // Users can update their own suggestions
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId &&
+        // Prevent changing userId, chatId, messageId, type, createdAt
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.chatId == resource.data.chatId &&
+        request.resource.data.messageId == resource.data.messageId &&
+        request.resource.data.type == resource.data.type &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        // Validate status transitions
+        (resource.data.status == 'pending' && 
+         request.resource.data.status in ['confirmed', 'rejected']) ||
+        (resource.data.status == 'confirmed' && 
+         request.resource.data.status in ['executed', 'pending']) ||
+        (resource.data.status == 'rejected' && 
+         request.resource.data.status == 'pending') ||
+        (resource.data.status == 'executed' && 
+         request.resource.data.status == 'executed') &&
+        // Validate optional timestamp fields
+        (!('confirmedAt' in request.resource.data) || 
+         request.resource.data.confirmedAt is timestamp) &&
+        (!('rejectedAt' in request.resource.data) || 
+         request.resource.data.rejectedAt is timestamp) &&
+        (!('executedAt' in request.resource.data) || 
+         request.resource.data.executedAt is timestamp) &&
+        // Validate execution result structure
+        (!('executionResult' in request.resource.data) || 
+         (request.resource.data.executionResult is map &&
+          request.resource.data.executionResult.keys().hasAll(['success']) &&
+          request.resource.data.executionResult.success is bool));
+      
+      // Users can delete their own suggestions
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
   }
 }

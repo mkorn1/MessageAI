@@ -110,6 +110,125 @@ export interface N8nAnalysisResponse {
   analysisId?: string; // Optional tracking ID from n8n
 }
 
+// Actual n8n response format (based on webhook testing)
+export interface N8nActualResponse {
+  message: {
+    role: 'assistant';
+    content: {
+      chat_id: string;
+      message_id: string;
+      is_actionable: boolean;
+      categories: string[];
+      confidence: 'low' | 'medium' | 'high';
+      reasoning: string;
+      extracted_details: {
+        date?: string;
+        time?: string;
+        location?: string | null;
+        people_mentioned: string[];
+        action_required?: string;
+        deadline?: string | null;
+        urgency?: 'low' | 'medium' | 'high';
+        decision_topic?: string;
+        rsvp_status?: 'pending' | 'confirmed' | 'declined';
+        missing_information?: string[];
+      };
+    };
+    refusal: null;
+    annotations: any[];
+  };
+  logprobs: null;
+  finish_reason: 'stop';
+}
+
+// Helper function to convert n8n response to our suggestion format
+export const convertN8nResponseToSuggestions = (
+  n8nResponse: N8nActualResponse[],
+  userId: string,
+  chatId: string,
+  messageId: string
+): CreateSuggestionFromN8n[] => {
+  const suggestions: CreateSuggestionFromN8n[] = [];
+  
+  n8nResponse.forEach((item) => {
+    const { content } = item.message;
+    const { extracted_details, categories, confidence, reasoning } = content;
+    
+    // Convert confidence string to number
+    const confidenceScore = confidence === 'high' ? 0.9 : confidence === 'medium' ? 0.7 : 0.5;
+    
+    // Process each category as a separate suggestion
+    categories.forEach((category) => {
+      let suggestionType: AISuggestionType;
+      let title: string;
+      let description: string;
+      let metadata: AISuggestionMetadata = { confidence: confidenceScore };
+      
+      switch (category) {
+        case 'CALENDAR_EVENT':
+          suggestionType = AISuggestionType.CALENDAR_EVENT;
+          title = `Add ${extracted_details.decision_topic || 'meeting'} to calendar`;
+          description = extracted_details.action_required || 'Calendar event detected from conversation';
+          if (extracted_details.date && extracted_details.time) {
+            metadata.eventDate = new Date(`${extracted_details.date}T${extracted_details.time}:00`);
+          }
+          if (extracted_details.location) {
+            metadata.eventLocation = extracted_details.location;
+          }
+          break;
+          
+        case 'DECISION':
+          suggestionType = AISuggestionType.DECISION_SUMMARY;
+          title = `Decision: ${extracted_details.decision_topic || 'Group decision'}`;
+          description = reasoning;
+          metadata.decisionSummary = reasoning;
+          metadata.participants = extracted_details.people_mentioned;
+          break;
+          
+        case 'PRIORITY':
+          suggestionType = AISuggestionType.PRIORITY_FLAG;
+          title = `Priority: ${extracted_details.action_required || 'Urgent message'}`;
+          description = reasoning;
+          metadata.priorityLevel = extracted_details.urgency === 'high' ? 5 : extracted_details.urgency === 'medium' ? 3 : 1;
+          metadata.urgencyReason = reasoning;
+          break;
+          
+        case 'RSVP':
+          suggestionType = AISuggestionType.RSVP_TRACKING;
+          title = `RSVP Tracking: ${extracted_details.decision_topic || 'Event response'}`;
+          description = extracted_details.action_required || 'Track responses to event';
+          metadata.rsvpQuestion = extracted_details.action_required || '';
+          metadata.rsvpDeadline = extracted_details.deadline ? new Date(extracted_details.deadline) : undefined;
+          break;
+          
+        case 'DEADLINE':
+          suggestionType = AISuggestionType.DEADLINE_REMINDER;
+          title = `Deadline: ${extracted_details.action_required || 'Task deadline'}`;
+          description = reasoning;
+          metadata.reminderDate = extracted_details.deadline ? new Date(extracted_details.deadline) : undefined;
+          metadata.deadlineType = extracted_details.urgency === 'high' ? 'hard' : 'soft';
+          break;
+          
+        default:
+          // Skip unknown categories
+          return;
+      }
+      
+      suggestions.push({
+        userId,
+        chatId,
+        messageId,
+        type: suggestionType,
+        title,
+        description,
+        metadata
+      });
+    });
+  });
+  
+  return suggestions;
+};
+
 // Helper type for suggestion creation from n8n response
 export type CreateSuggestionFromN8n = {
   userId: string;

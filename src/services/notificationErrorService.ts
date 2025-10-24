@@ -72,7 +72,7 @@ class NotificationErrorService {
     
     // Only log critical errors to prevent log flood
     if (error.type === 'PERMISSION_DENIED' || error.type === 'TOKEN_INVALID') {
-      console.error('🔔 NotificationErrorService: Critical error logged:', error.type, error.message);
+      console.error(`[NotificationErrorService] Critical error logged: ${error.type} - ${error.message}`);
     }
     return error;
   }

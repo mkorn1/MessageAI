@@ -73,6 +73,21 @@
 - [x] **Better Performance**: Eliminates React key conflicts and rendering issues
 - [x] **Testing**: No linting errors, ready for user testing
 
+### ✅ AI Suggestion Components Theme Hook Fix
+- [x] **Error Identified**: `TypeError: useTheme is not a function` in AISuggestionList and AISuggestionCard components
+- [x] **Root Cause**: Components were importing `useTheme` from `use-theme-color` hook which exports `useThemeColor`, not `useTheme`
+- [x] **Solution Applied**: Created new `useTheme` hook that returns theme colors object
+- [x] **Hook Implementation**: New hook provides convenient access to all theme colors (text, background, tint, etc.)
+- [x] **Component Updates**: Updated both AISuggestionList and AISuggestionCard to use correct import path
+- [x] **Testing**: No linting errors, components should now render without theme hook errors
+
+### ✅ AI Suggestions Firestore Query Fix
+- [x] **Error Identified**: "Failed to load suggestions. Function where() called with invalid data. unsupported field value: undefined. (found in field filter.status)" in To Do's tab
+- [x] **Root Cause**: AISuggestionList component was calling `aiSuggestionService.getSuggestions()` with incorrect parameters - passing an object with `filter` property instead of `userId` as first parameter
+- [x] **Solution Applied**: Fixed method call to pass `userId` as first parameter and options object as second parameter
+- [x] **Query Structure**: Service expects `getSuggestions(userId: string, options: SuggestionQueryOptions)` but component was calling with `{ filter: { userId, status }, ... }`
+- [x] **Testing**: No linting errors, AI suggestions should now load properly in To Do's tab
+
 ## In Progress
 - [ ] Milestone 3.1: Delivery Receipts (Hour 13)
 

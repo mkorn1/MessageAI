@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    Alert,
     SafeAreaView,
     StyleSheet,
     Text,
@@ -8,13 +9,46 @@ import {
     View,
 } from 'react-native';
 import { IconSymbol } from '../../components/ui/icon-symbol';
+import AISuggestionList from '../../src/components/AISuggestionList';
 import NotificationList from '../../src/components/NotificationList';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useAISuggestions } from '../../src/hooks/useAISuggestions';
+import aiSuggestionActionService from '../../src/services/aiSuggestionActionService';
+import { AISuggestionStatus } from '../../src/types/aiSuggestion';
 
 const NotificationsScreen: React.FC = () => {
   const { user } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'notifications' | 'todos'>('notifications');
+
+  // AI Suggestions hook for the To-do's tab
+  const {
+    suggestions,
+    loading: suggestionsLoading,
+    refreshing: suggestionsRefreshing,
+    error: suggestionsError,
+    refresh: refreshSuggestions,
+    updateSuggestion,
+    getPendingSuggestionsCount,
+  } = useAISuggestions({
+    status: AISuggestionStatus.Pending,
+    enableRealtime: true,
+    onSuggestionUpdate: (suggestion) => {
+      console.log('🔄 Suggestion updated:', suggestion.id);
+    },
+    onSuggestionCreate: (suggestion) => {
+      console.log('➕ New suggestion created:', suggestion.id);
+    },
+    onSuggestionDelete: (suggestionId) => {
+      console.log('🗑️ Suggestion deleted:', suggestionId);
+    },
+    onError: (error) => {
+      console.error('❌ AI Suggestions error:', error);
+    },
+  });
+
+  // Get pending suggestions count for badge
+  const pendingCount = getPendingSuggestionsCount();
 
   const handleBackPress = () => {
     router.back();
@@ -29,17 +63,102 @@ const NotificationsScreen: React.FC = () => {
     />
   );
 
-  const renderTodosContent = () => (
-    <View style={styles.contentContainer}>
-      <View style={styles.emptyState}>
-        <IconSymbol name="list.bullet" size={48} color="#8E8E93" />
-        <Text style={styles.emptyStateTitle}>No tasks yet</Text>
-        <Text style={styles.emptyStateText}>
-          Create your first task to get started
-        </Text>
-      </View>
-    </View>
-  );
+  const handleSuggestionAction = async (suggestionId: string, action: 'confirm' | 'reject') => {
+    console.log(`🎯 Suggestion ${action}:`, suggestionId);
+    
+    try {
+      // Update suggestion status first
+      const status = action === 'confirm' ? AISuggestionStatus.Confirmed : AISuggestionStatus.Rejected;
+      const timestamp = new Date();
+      
+      const updateResult = await updateSuggestion(suggestionId, {
+        status,
+        ...(action === 'confirm' ? { confirmedAt: timestamp } : { rejectedAt: timestamp }),
+      });
+
+      if (!updateResult.success) {
+        throw new Error(updateResult.error?.message || `Failed to ${action} suggestion`);
+      }
+
+      console.log(`✅ Suggestion ${action}ed successfully`);
+
+      // If confirmed, execute the action
+      if (action === 'confirm' && updateResult.data) {
+        console.log('🎯 Executing confirmed suggestion action');
+        
+        const executionResult = await aiSuggestionActionService.executeSuggestion(updateResult.data);
+        
+        if (executionResult.success && executionResult.data) {
+          const result = executionResult.data;
+          
+          if (result.success) {
+            Alert.alert(
+              'Action Executed',
+              result.message || 'Suggestion action completed successfully',
+              [{ text: 'OK' }]
+            );
+            console.log('✅ Suggestion action executed successfully');
+          } else {
+            Alert.alert(
+              'Action Failed',
+              result.error || 'Failed to execute suggestion action',
+              [{ text: 'OK' }]
+            );
+            console.error('❌ Suggestion action failed:', result.error);
+          }
+        } else {
+          Alert.alert(
+            'Action Failed',
+            executionResult.error?.message || 'Failed to execute suggestion action',
+            [{ text: 'OK' }]
+          );
+          console.error('❌ Failed to execute suggestion action:', executionResult.error?.message);
+        }
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Failed to ${action} suggestion:`, error.message);
+      Alert.alert(
+        'Error',
+        error.message || `Failed to ${action} suggestion`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleNavigateToChat = (chatId: string) => {
+    console.log('🧭 Navigating to chat:', chatId);
+    router.push(`/chat?chatId=${chatId}` as any);
+  };
+
+  const renderTodosContent = () => {
+    if (!user?.uid) {
+      return (
+        <View style={styles.contentContainer}>
+          <View style={styles.emptyState}>
+            <IconSymbol name="person.circle" size={48} color="#8E8E93" />
+            <Text style={styles.emptyStateTitle}>Please sign in</Text>
+            <Text style={styles.emptyStateText}>
+              You need to be signed in to view AI suggestions
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <AISuggestionList
+        userId={user.uid}
+        onSuggestionAction={handleSuggestionAction}
+        showSourceContext={true}
+        enableFiltering={true}
+        enableSorting={true}
+        enablePullToRefresh={true}
+        maxSuggestions={50}
+        onNavigateToChat={handleNavigateToChat}
+      />
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -78,12 +197,27 @@ const NotificationsScreen: React.FC = () => {
           ]}
           onPress={() => setActiveTab('todos')}
         >
-          <Text style={[
-            styles.tabText,
-            activeTab === 'todos' && styles.activeTabText
-          ]}>
-            To do's
-          </Text>
+          <View style={styles.tabContent}>
+            <Text style={[
+              styles.tabText,
+              activeTab === 'todos' && styles.activeTabText
+            ]}>
+              To do's
+            </Text>
+            {pendingCount > 0 && (
+              <View style={[
+                styles.badge,
+                activeTab === 'todos' && styles.badgeActive
+              ]}>
+                <Text style={[
+                  styles.badgeText,
+                  activeTab === 'todos' && styles.badgeTextActive
+                ]}>
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -153,6 +287,11 @@ const styles = StyleSheet.create({
   activeTab: {
     backgroundColor: '#007AFF',
   },
+  tabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabText: {
     fontSize: 16,
     fontWeight: '600',
@@ -160,6 +299,28 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#FFFFFF',
+  },
+  badge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    marginLeft: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  badgeTextActive: {
+    color: '#007AFF',
   },
   contentContainer: {
     flex: 1,
