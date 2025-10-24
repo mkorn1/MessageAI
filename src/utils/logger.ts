@@ -14,10 +14,13 @@ class Logger {
   private config: LoggerConfig;
 
   constructor(config: Partial<LoggerConfig> = {}) {
+    // React Native doesn't have process.env, so we'll use defaults
+    const logLevel = (typeof process !== 'undefined' && process.env?.LOG_LEVEL as LogLevel) || 'info';
+    
     this.config = {
-      level: (process.env.LOG_LEVEL as LogLevel) || 'info',
-      quiet: process.argv.includes('--quiet') || process.argv.includes('-q') || false,
-      verbose: process.argv.includes('--verbose') || process.argv.includes('-v') || false,
+      level: logLevel,
+      quiet: false, // React Native doesn't have process.argv
+      verbose: false, // React Native doesn't have process.argv
       ...config
     };
   }

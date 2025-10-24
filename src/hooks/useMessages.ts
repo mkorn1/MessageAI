@@ -2,9 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthService from '../services/auth';
 import messageNotificationService from '../services/messageNotificationService';
 import MessagingService from '../services/messaging';
+import n8nWebhookService from '../services/n8nWebhookService';
 import notificationService from '../services/notificationService';
 import { AppError, Message, MessageType } from '../types';
 import { MessageStatusType } from '../types/messageStatus';
+import {
+    deduplicateMessages,
+    getMessagesFromOthers,
+    getMessagesToMarkAsRead
+} from '../utils/messageDeduplication';
+
+// EMERGENCY FIX: Add console throttling to prevent spam
+let messageLogCount = 0;
+const throttledMessageLog = (message: string) => {
+  messageLogCount++;
+  if (messageLogCount % 20 === 0) { // Only log every 20th occurrence
+    console.log(message);
+  }
+};
 
 interface UseMessagesOptions {
   chatId: string;
@@ -62,6 +77,47 @@ export const useMessages = ({
   const lastReadMarkTime = useRef<number>(0);
   const READ_MARK_THROTTLE = 1000; // 1 second throttle for real-time read marking
   
+  // AI Analysis tracking
+  const analyzedMessagesRef = useRef<Set<string>>(new Set());
+  
+  // Trigger AI analysis for a message
+  const triggerAIAnalysis = useCallback(async (message: Message, chatContext: Message[], userId: string) => {
+    // Skip if already analyzed
+    if (analyzedMessagesRef.current.has(message.id)) {
+      return;
+    }
+    
+    // Skip very short messages
+    if (message.text.trim().length < 10) {
+      return;
+    }
+    
+    // Skip system messages or non-text messages
+    if (message.messageType !== 'text') {
+      return;
+    }
+    
+    try {
+      console.log('🤖 Triggering AI analysis for message:', message.id);
+      analyzedMessagesRef.current.add(message.id);
+      
+      // Send to n8n webhook for analysis
+      const result = await n8nWebhookService.sendMessageAnalysis(message, chatContext, userId);
+      
+      if (result.success) {
+        console.log('✅ AI analysis completed for message:', message.id);
+      } else {
+        console.log('⚠️ AI analysis failed for message:', message.id, result.error?.message);
+        // Remove from analyzed set so it can be retried
+        analyzedMessagesRef.current.delete(message.id);
+      }
+    } catch (error) {
+      console.error('❌ AI analysis error for message:', message.id, error);
+      // Remove from analyzed set so it can be retried
+      analyzedMessagesRef.current.delete(message.id);
+    }
+  }, []);
+  
   // Initialize messages and set up real-time listener
   const initializeMessages = useCallback(async () => {
     try {
@@ -88,7 +144,7 @@ export const useMessages = ({
         unsubscribeRef.current = MessagingService.subscribeToMessages(
           chatId,
           (newMessages) => {
-            console.log('🔄 Real-time listener received messages:', newMessages.length);
+            throttledMessageLog('🔄 Real-time listener received messages: ' + newMessages.length);
             
             // Mark new messages as read when received (for messages not sent by current user)
             const currentUser = currentUserRef.current;
@@ -97,103 +153,30 @@ export const useMessages = ({
             // Throttle read marking to prevent excessive calls
             const shouldMarkAsRead = currentUser && (now - lastReadMarkTime.current > READ_MARK_THROTTLE);
             
-            // Merge with existing messages using enhanced deduplication
+            // Merge with existing messages using optimized deduplication
             setMessages(prevMessages => {
-              // Create a comprehensive deduplication map
-              const messageMap = new Map<string, Message>();
+              const result = deduplicateMessages(prevMessages, newMessages);
               
-              // Helper function to create a unique key for message matching
-              const createMessageKey = (msg: Message): string => {
-                // For optimistic messages, use content-based key
-                if (msg.id.startsWith('temp_')) {
-                  return `temp_${msg.senderId}_${msg.text}_${msg.timestamp.getTime()}`;
-                }
-                // For real messages, use the actual ID
-                return msg.id;
-              };
-              
-              // Helper function to check if messages are duplicates
-              const areMessagesDuplicate = (msg1: Message, msg2: Message): boolean => {
-                // Same ID = definitely duplicate
-                if (msg1.id === msg2.id) return true;
-                
-                // Same content, sender, and timestamp (within 5 seconds) = likely duplicate
-                const timeDiff = Math.abs(msg1.timestamp.getTime() - msg2.timestamp.getTime());
-                return msg1.text === msg2.text && 
-                       msg1.senderId === msg2.senderId && 
-                       timeDiff < 5000; // 5 seconds tolerance
-              };
-              
-              // Add all existing messages first
-              prevMessages.forEach(msg => {
-                const key = createMessageKey(msg);
-                messageMap.set(key, msg);
-              });
-              
-              // Process new server messages
-              newMessages.forEach(newMsg => {
-                let isDuplicate = false;
-                
-                // Check against existing messages
-                for (const [key, existingMsg] of messageMap.entries()) {
-                  if (areMessagesDuplicate(newMsg, existingMsg)) {
-                    // Server message takes priority over optimistic message
-                    if (existingMsg.id.startsWith('temp_') && !newMsg.id.startsWith('temp_')) {
-                      messageMap.set(key, newMsg);
-                      console.log('🔄 Replaced optimistic message with server message:', existingMsg.id, '→', newMsg.id);
-                    }
-                    isDuplicate = true;
-                    break;
-                  }
-                }
-                
-                // Only add if not a duplicate
-                if (!isDuplicate) {
-                  const key = createMessageKey(newMsg);
-                  messageMap.set(key, newMsg);
-                }
-              });
-              
-              // Convert back to array and sort by timestamp
-              const combinedMessages = Array.from(messageMap.values())
-                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-              
-              console.log('📝 Deduplicated messages:', combinedMessages.length, 'server:', newMessages.length, 'previous:', prevMessages.length);
-              
-              // Now handle read marking for truly new messages
+              // Handle read marking for truly new messages
               if (shouldMarkAsRead) {
-                const existingMessageIds = new Set(prevMessages.map(msg => msg.id));
-                const trulyNewMessages = combinedMessages.filter(msg => 
-                  !existingMessageIds.has(msg.id) &&
-                  msg.senderId !== currentUser.uid && 
-                  !msg.id.startsWith('temp_') &&
-                  (!msg.readBy || !msg.readBy[currentUser.uid])
-                );
+                const messagesToMark = getMessagesToMarkAsRead(result.newMessages, currentUser.uid);
                 
-                if (trulyNewMessages.length > 0) {
-                  console.log('📖 Real-time: Marking', trulyNewMessages.length, 'truly new messages as read');
+                if (messagesToMark.length > 0) {
                   // Mark as read immediately for new messages
-                  MessagingService.markMessagesAsRead(chatId, currentUser.uid, trulyNewMessages.map(msg => msg.id));
+                  MessagingService.markMessagesAsRead(chatId, currentUser.uid, messagesToMark.map(msg => msg.id));
                   lastReadMarkTime.current = now;
                   
                   // Trigger notification badge update (non-blocking)
-                  notificationService.clearBadgeCount().catch(error => {
-                    console.log('⚠️ Notification badge clear failed (non-critical):', error);
+                  notificationService.clearBadgeCount().catch(() => {
+                    // Silent fail for non-critical notification badge clear
                   });
                 }
               }
               
               // Trigger notification checks for new messages from other users
-              const existingMessageIds = new Set(prevMessages.map(msg => msg.id));
-              const newMessagesFromOthers = combinedMessages.filter(msg => 
-                !existingMessageIds.has(msg.id) &&
-                msg.senderId !== currentUser?.uid && 
-                !msg.id.startsWith('temp_')
-              );
+              const newMessagesFromOthers = currentUser ? getMessagesFromOthers(result.newMessages, currentUser.uid) : [];
               
               if (newMessagesFromOthers.length > 0 && currentUser) {
-                console.log('🔔 useMessages: New messages from others detected:', newMessagesFromOthers.length);
-                
                 // Process notifications for new messages
                 newMessagesFromOthers.forEach(message => {
                   // Create notification in storage for notification center
@@ -201,8 +184,8 @@ export const useMessages = ({
                     message,
                     currentUser.uid,
                     chatId
-                  ).catch(error => {
-                    console.log('⚠️ Message notification processing failed (non-critical):', error);
+                  ).catch(() => {
+                    // Silent fail for non-critical notification processing
                   });
 
                   // Trigger existing notification checks for push notifications
@@ -213,18 +196,22 @@ export const useMessages = ({
                     messageText: message.text,
                     timestamp: message.timestamp,
                     chatType: 'direct' // Default to direct, will be overridden by MessagingService
-                  }).catch(error => {
-                    console.log('⚠️ Notification check failed (non-critical):', error);
+                  }).catch(() => {
+                    // Silent fail for non-critical notification check
+                  });
+
+                  // Trigger AI analysis for new messages (non-blocking)
+                  triggerAIAnalysis(message, result.messages, currentUser.uid).catch(() => {
+                    // Silent fail for non-critical AI analysis
                   });
                 });
               }
               
-              return combinedMessages;
+              return result.messages;
             });
             setConnectionError(false);
           },
           (error) => {
-            console.error('Real-time listener error:', error);
             setConnectionError(true);
             setError({
               code: 'realtime-error',

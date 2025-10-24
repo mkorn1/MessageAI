@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createTestData } from '../../scripts/createTestData';
@@ -8,6 +9,7 @@ import PermissionTest from '../components/PermissionTest';
 
 const TestDataScreen: React.FC = () => {
   const [activeTest, setActiveTest] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleCreateTestData = async () => {
     try {
@@ -54,6 +56,13 @@ const TestDataScreen: React.FC = () => {
         
         <View style={styles.testSection}>
           <Text style={styles.sectionTitle}>Notification Tests</Text>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.testButton]}
+            onPress={() => router.push('/ai-agent-test')}
+          >
+            <Text style={styles.buttonText}>AI Agent Test</Text>
+          </TouchableOpacity>
           
           <TouchableOpacity 
             style={[styles.button, styles.testButton]}

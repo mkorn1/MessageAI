@@ -31,18 +31,18 @@ export interface N8nConfig {
  */
 const defaultConfig: N8nConfig = {
   // Webhook URLs - Update these for your n8n instance
-  analysisWebhookUrl: 'https://mkorn1.app.n8n.cloud/webhook-test/cfb3bef3-f299-4f85-8eb4-cb350dbbb810',
+  analysisWebhookUrl: 'https://mkorn1.app.n8n.cloud/webhook/cfb3bef3-f299-4f85-8eb4-cb350dbbb810',
   actionWebhookUrl: undefined, // Will be set when action webhook is created
   
   // Authentication - Set if n8n requires API key
-  apiKey: process.env.N8N_API_KEY,
+  apiKey: undefined, // Set via updateN8nConfig() if needed
   
   // Request settings
   timeout: 10000, // 10 seconds
   retryAttempts: 3,
   
   // Environment
-  environment: (process.env.NODE_ENV as 'development' | 'staging' | 'production') || 'development',
+  environment: 'development', // Default to development for React Native
   
   // Feature flags
   enableRetries: true,

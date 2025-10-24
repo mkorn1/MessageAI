@@ -32,17 +32,13 @@ class ChatService {
    */
   async createChat(chatData: CreateChat): Promise<Result<Chat>> {
     try {
-      console.log('🏗️ ChatService.createChat called with:', chatData);
-      
       // Validate chat data
       const validationResult = this.validateChat(chatData);
       if (!validationResult.success) {
-        console.log('❌ Chat validation failed:', validationResult.error);
         return validationResult;
       }
 
       // Create chat document
-      console.log('🔥 Adding chat to Firestore...');
       const chatDocRef = await addDoc(collection(db, this.CHATS_COLLECTION), {
         ...chatData,
         createdAt: serverTimestamp(),
@@ -57,8 +53,6 @@ class ChatService {
           vibrationEnabled: true
         }
       });
-
-      console.log('✅ Chat added to Firestore successfully with ID:', chatDocRef.id);
 
       // Create the chat object with the actual document ID
       const chat: Chat = {
@@ -77,15 +71,12 @@ class ChatService {
         }
       };
 
-      console.log('📝 Created chat object with correct ID:', chat);
-
       return {
         success: true,
         data: chat
       };
 
     } catch (error: any) {
-      console.log('💥 Error in ChatService.createChat:', error);
       return {
         success: false,
         error: createError<FirebaseError>({

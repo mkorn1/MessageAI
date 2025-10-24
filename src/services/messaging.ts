@@ -39,17 +39,15 @@ class MessagingService {
    */
   async sendMessage(messageData: CreateMessage): Promise<Result<Message>> {
     try {
-      console.log('📤 MessagingService.sendMessage called');
-      
       // Validate message data
       const validationResult = this.validateMessage(messageData);
       if (!validationResult.success) {
-        console.log('❌ Message validation failed:', validationResult.error);
-        return validationResult;
+        return {
+          success: false,
+          error: validationResult.error,
+          retryable: validationResult.retryable
+        };
       }
-
-      // Skip chat verification - let Firestore handle it naturally
-      console.log('📤 Proceeding with message send');
 
       // Create message document
       const messageRef = doc(collection(db, this.MESSAGES_COLLECTION));
@@ -59,10 +57,7 @@ class MessagingService {
         timestamp: messageData.timestamp || new Date()
       };
 
-      console.log('📝 Created message object');
-
       // Add to Firestore
-      console.log('🔥 Adding to Firestore');
       await addDoc(collection(db, this.MESSAGES_COLLECTION), {
         ...message,
         timestamp: serverTimestamp()
@@ -74,30 +69,25 @@ class MessagingService {
         status: MessageStatusType.SENDING
       });
 
-      console.log('✅ Message added to Firestore successfully');
-
       // Update status to SENT
       await messageStatusService.addMessageStatus({
         messageId: message.id,
         status: MessageStatusType.SENT
       });
 
-      console.log('✅ Message status updated to SENT');
-
       // Trigger notification checks (non-blocking)
-      this.triggerNotificationChecks(message).catch(error => {
-        console.log('⚠️ Notification checks failed (non-critical):', error);
+      this.triggerNotificationChecks(message).catch(() => {
+        // Silent fail for non-critical notification checks
       });
 
       // Update chat's last message (non-blocking)
-      console.log('🔄 Updating chat last message...');
       this.updateChatLastMessage(message.chatId, {
         id: message.id,
         text: message.text,
         senderId: message.senderId,
         timestamp: message.timestamp
-      }).catch(error => {
-        console.log('⚠️ Chat last message update failed (non-critical):', error);
+      }).catch(() => {
+        // Silent fail for non-critical chat update
       });
 
       return {
@@ -106,23 +96,7 @@ class MessagingService {
       };
 
     } catch (error: any) {
-      console.log('💥 Error in MessagingService.sendMessage:', error);
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to send message',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to send message'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to send message');
     }
   }
 
@@ -168,22 +142,7 @@ class MessagingService {
       };
 
     } catch (error: any) {
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to get messages',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to get messages'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to get messages');
     }
   }
 
@@ -192,7 +151,7 @@ class MessagingService {
    */
   async updateMessageStatus(
     messageId: string, 
-    status: MessageStatus
+    status: MessageStatusType
   ): Promise<Result<void>> {
     try {
       const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
@@ -207,22 +166,7 @@ class MessagingService {
       };
 
     } catch (error: any) {
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to update message status',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to update message status'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to update message status');
     }
   }
 
@@ -246,22 +190,7 @@ class MessagingService {
       };
 
     } catch (error: any) {
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to edit message',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to edit message'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to edit message');
     }
   }
 
@@ -281,22 +210,7 @@ class MessagingService {
       };
 
     } catch (error: any) {
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to delete message',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to delete message'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to delete message');
     }
   }
 
@@ -334,7 +248,6 @@ class MessagingService {
         callback(messages);
       },
       (error) => {
-        console.error('Error listening to messages:', error);
         onError?.(error);
       }
     );
@@ -350,96 +263,36 @@ class MessagingService {
   ): Promise<Result<void>> {
     try {
       // Validate inputs
-      if (!chatId || !userId || !messageIds.length) {
-        return {
-          success: false,
-          error: createError<FirebaseError>({
-            type: 'firebase',
-            service: 'firestore',
-            code: 'invalid-argument',
-            message: 'Invalid parameters for markMessagesAsRead'
-          }),
-          retryable: false
-        };
+      const validationResult = this.validateMarkAsReadParams(chatId, userId, messageIds);
+      if (!validationResult.success) {
+        return validationResult;
       }
 
-      // Filter out empty message IDs and validate
-      const validMessageIds = messageIds.filter(id => id && typeof id === 'string');
-      if (validMessageIds.length === 0) {
-        return {
-          success: true,
-          data: undefined
-        };
-      }
-
-      // Check which messages actually exist in Firestore
-      const existingMessageIds: string[] = [];
-      for (const messageId of validMessageIds) {
-        try {
-          const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
-          const messageDoc = await getDoc(messageRef);
-          if (messageDoc.exists()) {
-            existingMessageIds.push(messageId);
-          } else {
-            console.log(`⚠️ Message ${messageId} not found in Firestore, skipping...`);
-          }
-        } catch (error) {
-          console.log(`⚠️ Error checking message ${messageId}:`, error);
-        }
-      }
-
+      // Get existing message IDs
+      const existingMessageIds = await this.getExistingMessageIds(messageIds);
       if (existingMessageIds.length === 0) {
-        console.log('📭 No existing messages to mark as read');
-        return {
-          success: true,
-          data: undefined
-        };
+        return { success: true, data: undefined };
       }
 
-      // Use the new message status service
+      // Use the message status service
       const result = await messageStatusService.markMessagesAsRead(existingMessageIds, userId);
       
       if (result.success) {
-        console.log(`✅ Marked ${existingMessageIds.length} messages as read for user ${userId} in chat ${chatId}`);
-        
         // Trigger notification badge update (non-blocking)
-        this.updateNotificationBadge(userId, chatId).catch(error => {
-          console.log('⚠️ Notification badge update failed (non-critical):', error);
+        this.updateNotificationBadge(userId, chatId).catch(() => {
+          // Silent fail for non-critical notification badge update
         });
-      } else {
-        console.error('❌ Failed to mark messages as read via status service:', result.error);
       }
 
       return result;
 
     } catch (error: any) {
-      console.error('❌ Failed to mark messages as read:', error);
-      
       // Handle specific case where message doesn't exist (optimistic message)
       if (error.code === 'not-found') {
-        console.log('⚠️ Some messages not found in Firestore (likely optimistic messages), continuing...');
-        return {
-          success: true,
-          data: undefined
-        };
+        return { success: true, data: undefined };
       }
       
-      return {
-        success: false,
-        error: createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to mark messages as read',
-          originalError: error
-        }),
-        retryable: isRetryableError(createError<FirebaseError>({
-          type: 'firebase',
-          service: 'firestore',
-          code: error.code || 'unknown',
-          message: error.message || 'Failed to mark messages as read'
-        }))
-      };
+      return this.createFirebaseError(error, 'Failed to mark messages as read');
     }
   }
 
@@ -720,6 +573,60 @@ class MessagingService {
   /**
    * Private helper methods
    */
+  private createFirebaseError(error: any, defaultMessage: string): Result<never> {
+    return {
+      success: false,
+      error: createError<FirebaseError>({
+        type: 'firebase',
+        service: 'firestore',
+        code: error.code || 'unknown',
+        message: error.message || defaultMessage,
+        originalError: error
+      }),
+      retryable: isRetryableError(createError<FirebaseError>({
+        type: 'firebase',
+        service: 'firestore',
+        code: error.code || 'unknown',
+        message: error.message || defaultMessage
+      }))
+    };
+  }
+
+  private validateMarkAsReadParams(chatId: string, userId: string, messageIds: string[]): Result<void> {
+    if (!chatId || !userId || !messageIds.length) {
+      return {
+        success: false,
+        error: createError<FirebaseError>({
+          type: 'firebase',
+          service: 'firestore',
+          code: 'invalid-argument',
+          message: 'Invalid parameters for markMessagesAsRead'
+        }),
+        retryable: false
+      };
+    }
+    return { success: true, data: undefined };
+  }
+
+  private async getExistingMessageIds(messageIds: string[]): Promise<string[]> {
+    const validMessageIds = messageIds.filter(id => id && typeof id === 'string');
+    if (validMessageIds.length === 0) return [];
+
+    const existingMessageIds: string[] = [];
+    for (const messageId of validMessageIds) {
+      try {
+        const messageRef = doc(db, this.MESSAGES_COLLECTION, messageId);
+        const messageDoc = await getDoc(messageRef);
+        if (messageDoc.exists()) {
+          existingMessageIds.push(messageId);
+        }
+      } catch (error) {
+        // Silent error handling for individual message checks
+      }
+    }
+    return existingMessageIds;
+  }
+
   private validateMessage(messageData: CreateMessage): Result<void> {
     if (!messageData.text?.trim()) {
       return {

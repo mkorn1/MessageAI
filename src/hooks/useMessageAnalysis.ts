@@ -109,9 +109,12 @@ export const useMessageAnalysis = (
 
     try {
       setIsAnalyzing(true);
-      console.log('🔍 useMessageAnalysis: Starting message analysis');
-      console.log('📤 Message ID:', message.id);
-      console.log('💬 Message text:', message.text.substring(0, 100) + '...');
+      // EMERGENCY FIX: Throttle console logs to prevent spam
+      if (Math.random() < 0.1) { // Only log 10% of the time
+        console.log('🔍 useMessageAnalysis: Starting message analysis');
+        console.log('📤 Message ID:', message.id);
+        console.log('💬 Message text:', message.text.substring(0, 100) + '...');
+      }
 
       // Get chat context if not provided
       let contextMessages: Message[] = [];

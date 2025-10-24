@@ -2,6 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { messageStatusService } from '../services/messageStatus';
 import { MessageStatusType } from '../types/messageStatus';
 
+// EMERGENCY FIX: Add loop detection to prevent crashes
+let consoleCount = 0;
+const throttledLog = (message: string) => {
+  consoleCount++;
+  if (consoleCount % 10 === 0) { // Only log every 10th occurrence
+    console.log(message);
+  }
+};
+
 export interface MessageWithStatus {
   messageId: string;
   status: MessageStatusType;
@@ -12,6 +21,16 @@ export const useMessageStatuses = (messageIds: string[]) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // EMERGENCY FIX: Add loop detection
+  const renderCount = useRef(0);
+  useEffect(() => {
+    renderCount.current++;
+    if (renderCount.current > 10) {
+      console.error('🚨 INFINITE LOOP DETECTED IN useMessageStatuses - STOPPING');
+      return;
+    }
+  });
 
   // Filter message IDs to only track those that need status updates
   const getRelevantMessageIds = useCallback((allMessageIds: string[]): string[] => {
@@ -22,7 +41,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
       // Track all statuses except FAILED (which is a final error state)
       return currentStatus !== MessageStatusType.FAILED;
     });
-  }, [statuses]);
+  }, []); // CRITICAL FIX: Remove statuses dependency to prevent infinite loop
 
   // Debounced status update function
   const debouncedUpdateStatuses = useCallback((newStatuses: { [messageId: string]: MessageStatusType }) => {
@@ -42,7 +61,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
         );
         
         if (hasChanges) {
-          console.log('🔄 Status update applied:', newStatuses);
+          throttledLog('🔄 Status update applied: ' + JSON.stringify(newStatuses));
           return updated;
         }
         
@@ -61,7 +80,11 @@ export const useMessageStatuses = (messageIds: string[]) => {
   }, []);
 
   const fetchStatuses = useCallback(async () => {
-    const relevantMessageIds = getRelevantMessageIds(messageIds);
+    // CRITICAL FIX: Use current statuses directly instead of getRelevantMessageIds to prevent infinite loop
+    const relevantMessageIds = messageIds.filter(messageId => {
+      const currentStatus = statuses[messageId];
+      return currentStatus !== MessageStatusType.FAILED;
+    });
     
     if (relevantMessageIds.length === 0) {
       setStatuses({});
@@ -87,7 +110,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
     } finally {
       setLoading(false);
     }
-  }, [messageIds, getRelevantMessageIds]);
+  }, [messageIds]); // CRITICAL FIX: Remove getRelevantMessageIds dependency
 
   useEffect(() => {
     fetchStatuses();
@@ -95,7 +118,11 @@ export const useMessageStatuses = (messageIds: string[]) => {
 
   // Subscribe to status changes
   useEffect(() => {
-    const relevantMessageIds = getRelevantMessageIds(messageIds);
+    // CRITICAL FIX: Use current statuses directly to prevent infinite loop
+    const relevantMessageIds = messageIds.filter(messageId => {
+      const currentStatus = statuses[messageId];
+      return currentStatus !== MessageStatusType.FAILED;
+    });
     
     if (relevantMessageIds.length === 0) return;
 
@@ -117,7 +144,7 @@ export const useMessageStatuses = (messageIds: string[]) => {
     );
 
     return unsubscribe;
-  }, [messageIds, getRelevantMessageIds, debouncedUpdateStatuses]);
+  }, [messageIds, debouncedUpdateStatuses]); // CRITICAL FIX: Remove getRelevantMessageIds dependency
 
   const getStatus = useCallback((messageId: string): MessageStatusType => {
     return statuses[messageId] || MessageStatusType.SENDING;

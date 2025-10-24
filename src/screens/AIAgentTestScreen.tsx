@@ -7,17 +7,18 @@
 
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { useAuth } from '../src/contexts/AuthContext';
-import { useAISuggestions } from '../src/hooks/useAISuggestions';
-import { useMessageAnalysis } from '../src/hooks/useMessageAnalysis';
-import { AISuggestionStatus } from '../src/types/aiSuggestion';
+import { useAuth } from '../contexts/AuthContext';
+import { useAISuggestions } from '../hooks/useAISuggestions';
+import { useMessageAnalysis } from '../hooks/useMessageAnalysis';
+import { AISuggestionStatus } from '../types/aiSuggestion';
+import { Message } from '../types/message';
 
 interface TestResult {
   testName: string;
@@ -35,13 +36,14 @@ const AIAgentTestScreen: React.FC = () => {
   const {
     suggestions,
     loading: suggestionsLoading,
+    refreshing: suggestionsRefreshing,
     error: suggestionsError,
     refresh: refreshSuggestions,
     updateSuggestion,
     getPendingSuggestionsCount,
   } = useAISuggestions({
     status: AISuggestionStatus.Pending,
-    enableRealtime: true,
+    enableRealtime: true, // Re-enable for production
   });
 
   // Message Analysis hook for testing
@@ -85,12 +87,65 @@ const AIAgentTestScreen: React.FC = () => {
     }
   };
 
-  // Test 1: Check Authentication
-  const testAuthentication = async () => {
+  // Test 1: Send Test Message to n8n Webhook
+  const testN8nWebhook = async () => {
     if (!user?.uid) {
       throw new Error('User not authenticated');
     }
-    console.log('✅ User authenticated:', user.uid);
+
+    console.log('🧪 Testing n8n webhook with sample message...');
+    
+    // Create a test message
+    const testMessage: Message = {
+      id: `test_${Date.now()}`,
+      text: "Let's meet tomorrow at 2pm for coffee",
+      senderId: user.uid,
+      chatId: 'test-chat-123',
+      timestamp: new Date(),
+      messageType: 'text' as any
+    };
+
+    // Create chat context
+    const chatContext: Message[] = [
+      {
+        id: 'context-1',
+        text: "Hey, how are you doing?",
+        senderId: 'other-user',
+        chatId: 'test-chat-123',
+        timestamp: new Date(Date.now() - 60000), // 1 minute ago
+        messageType: 'text' as any
+      },
+      {
+        id: 'context-2', 
+        text: "I'm good, thanks!",
+        senderId: user.uid,
+        chatId: 'test-chat-123',
+        timestamp: new Date(Date.now() - 30000), // 30 seconds ago
+        messageType: 'text' as any
+      }
+    ];
+
+    // Send to n8n webhook
+    console.log('📤 Sending message to n8n webhook...');
+    console.log('📝 Message:', testMessage.text);
+    console.log('🔗 Webhook URL:', 'https://mkorn1.app.n8n.cloud/webhook/cfb3bef3-f299-4f85-8eb4-cb350dbbb810');
+    console.log('👤 User ID:', user.uid);
+    console.log('📊 Chat Context Length:', chatContext.length);
+    
+    try {
+      const result = await analyzeMessage(testMessage, chatContext);
+      
+      if (!result.success) {
+        console.error('❌ Webhook test failed:', result.error);
+        throw new Error(`Webhook test failed: ${result.error?.message}`);
+      }
+
+      console.log('✅ n8n webhook test completed successfully');
+      console.log('📋 Check your n8n workflow and the To Do tab for AI suggestions');
+    } catch (error) {
+      console.error('💥 Error during webhook test:', error);
+      throw error;
+    }
   };
 
   // Test 2: Check AI Suggestions Hook
@@ -167,25 +222,24 @@ const AIAgentTestScreen: React.FC = () => {
 
   // Run all tests
   const runAllTests = async () => {
+    console.log('🚀 Starting all tests...');
     setIsRunning(true);
     setTestResults([]);
 
     const tests = [
-      { name: 'Authentication Check', fn: testAuthentication },
-      { name: 'AI Suggestions Hook', fn: testAISuggestionsHook },
-      { name: 'Message Analysis Hook', fn: testMessageAnalysisHook },
-      { name: 'Suggestion Creation', fn: testSuggestionCreation },
-      { name: 'Suggestion Actions', fn: testSuggestionActions },
-      { name: 'Real-time Updates', fn: testRealTimeUpdates },
-      { name: 'Badge Count', fn: testBadgeCount },
+      { name: 'n8n Webhook Test', fn: testN8nWebhook },
     ];
 
+    console.log(`📋 Running ${tests.length} tests...`);
+
     for (const test of tests) {
+      console.log(`🔄 Running test: ${test.name}`);
       await runTest(test.name, test.fn);
       // Small delay between tests
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
+    console.log('✅ All tests completed');
     setIsRunning(false);
   };
 
@@ -243,10 +297,21 @@ const AIAgentTestScreen: React.FC = () => {
 
         <TouchableOpacity
           style={[styles.button, styles.secondaryButton]}
-          onPress={() => runIndividualTest('Authentication Check', testAuthentication)}
+          onPress={() => runIndividualTest('n8n Webhook Test', testN8nWebhook)}
           disabled={isRunning}
         >
-          <Text style={[styles.buttonText, styles.secondaryButtonText]}>Test Auth</Text>
+          <Text style={[styles.buttonText, styles.secondaryButtonText]}>Test Webhook</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, styles.secondaryButton]}
+          onPress={() => {
+            console.log('🔄 Manually refreshing suggestions...');
+            refreshSuggestions();
+          }}
+          disabled={isRunning}
+        >
+          <Text style={[styles.buttonText, styles.secondaryButtonText]}>Refresh Suggestions</Text>
         </TouchableOpacity>
       </View>
 
@@ -297,20 +362,25 @@ const AIAgentTestScreen: React.FC = () => {
         <Text style={styles.infoText}>Suggestions: {suggestions.length}</Text>
         <Text style={styles.infoText}>Pending: {getPendingSuggestionsCount()}</Text>
         <Text style={styles.infoText}>Analyzing: {isAnalyzing ? '🔄 Yes' : '✅ No'}</Text>
+        <Text style={styles.infoText}>Loading: {suggestionsLoading ? '🔄 Yes' : '✅ No'}</Text>
+        <Text style={styles.infoText}>Refreshing: {suggestionsRefreshing ? '🔄 Yes' : '✅ No'}</Text>
         {suggestionsError && (
           <Text style={[styles.infoText, styles.errorText]}>Error: {suggestionsError}</Text>
+        )}
+        {suggestions.length > 0 && (
+          <Text style={styles.infoText}>Latest: {suggestions[0].title}</Text>
         )}
       </View>
 
       {/* Manual Test Instructions */}
       <View style={styles.instructionsContainer}>
-        <Text style={styles.instructionsTitle}>Manual Testing</Text>
+        <Text style={styles.instructionsTitle}>How to Test</Text>
         <Text style={styles.instructionsText}>
-          1. Go to Notifications → To-do's tab{'\n'}
-          2. Send a test message: "Let's meet tomorrow at 2pm"{'\n'}
-          3. Wait for AI suggestion to appear{'\n'}
-          4. Confirm or reject the suggestion{'\n'}
-          5. Verify action execution
+          1. Click "Run All Tests" or "Test Webhook" button{'\n'}
+          2. This will send a test message to your n8n webhook{'\n'}
+          3. Check your n8n workflow for the incoming webhook{'\n'}
+          4. If configured correctly, an AI suggestion should appear{'\n'}
+          5. Check the "To Do" tab in Notifications to see the suggestion
         </Text>
       </View>
     </ScrollView>

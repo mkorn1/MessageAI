@@ -74,7 +74,7 @@ export const useAISuggestions = (
     type,
     chatId,
     limit: limitCount = 50,
-    enableRealtime = true,
+    enableRealtime = false, // EMERGENCY FIX: Temporarily disable to stop infinite loops
     onSuggestionUpdate,
     onSuggestionCreate,
     onSuggestionDelete,
@@ -456,13 +456,16 @@ export const useAISuggestions = (
   }, []);
 
   /**
-   * Initial load and setup
+   * Initial load and setup - CRITICAL FIX: Remove function dependencies to prevent infinite loop
    */
   useEffect(() => {
     if (user?.uid) {
-      loadSuggestions();
-      loadStats();
-      setupRealtimeListener();
+      const initializeData = async () => {
+        await loadSuggestions();
+        await loadStats();
+        setupRealtimeListener();
+      };
+      initializeData();
     }
 
     return () => {
@@ -470,7 +473,7 @@ export const useAISuggestions = (
         unsubscribeRef.current();
       }
     };
-  }, [user?.uid, loadSuggestions, loadStats, setupRealtimeListener]);
+  }, [user?.uid]); // CRITICAL FIX: Remove function dependencies
 
   /**
    * Cleanup on unmount

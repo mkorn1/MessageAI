@@ -12,6 +12,15 @@ import {
     validatePresenceData
 } from '../utils/presenceUtils';
 
+// EMERGENCY FIX: Add console throttling to prevent spam
+let presenceLogCount = 0;
+const throttledPresenceLog = (message: string) => {
+  presenceLogCount++;
+  if (presenceLogCount % 15 === 0) { // Only log every 15th occurrence
+    console.log(message);
+  }
+};
+
 /**
  * Custom hook for managing real-time presence data for chat participants
  * Integrates with existing User.isOnline field and provides filtered online-only data
@@ -254,7 +263,7 @@ export const usePresence = (chat: Chat | null): UsePresenceReturn => {
                 if (validatePresenceData(newPresence)) {
                   // Update cache with new data
                   presenceCache.set(chat.id, newPresence);
-                  console.log('✅ Presence updated and cached:', getPresenceSummary(newPresence));
+                  throttledPresenceLog('✅ Presence updated and cached: ' + getPresenceSummary(newPresence));
                   return newPresence;
                 } else {
                   console.error('❌ Invalid updated presence data');
@@ -308,10 +317,12 @@ export const usePresence = (chat: Chat | null): UsePresenceReturn => {
     };
   }, [chat]);
 
-  // Initial load
+  // Initial load - CRITICAL FIX: Use chat.id instead of refresh function to prevent infinite loop
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (chat) {
+      refresh();
+    }
+  }, [chat?.id]); // Use chat.id instead of refresh function
 
   return {
     presence,

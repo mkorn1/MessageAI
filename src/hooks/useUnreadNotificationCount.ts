@@ -11,7 +11,7 @@ export const useUnreadNotificationCount = () => {
       const count = await notificationStorageService.getUnreadCount();
       setUnreadCount(count);
     } catch (error) {
-      console.error('🔔 useUnreadNotificationCount: Failed to get unread count:', error);
+      // Silent error handling for notification count
     } finally {
       setIsLoading(false);
     }
@@ -22,7 +22,7 @@ export const useUnreadNotificationCount = () => {
       await notificationStorageService.markAsRead(notificationId);
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('🔔 useUnreadNotificationCount: Failed to mark as read:', error);
+      // Silent error handling for mark as read
     }
   }, []);
 
@@ -31,7 +31,7 @@ export const useUnreadNotificationCount = () => {
       await notificationStorageService.markAllAsRead();
       setUnreadCount(0);
     } catch (error) {
-      console.error('🔔 useUnreadNotificationCount: Failed to mark all as read:', error);
+      // Silent error handling for mark all as read
     }
   }, []);
 

@@ -137,6 +137,18 @@ class N8nWebhookService {
     userId: string
   ): Promise<Result<N8nActualResponse[]>> {
     try {
+      console.log('🚀 N8nWebhookService: Starting sendMessageAnalysis');
+      console.log('📝 Message ID:', message.id);
+      console.log('👤 User ID:', userId);
+      console.log('📊 Context Length:', chatContext.length);
+      console.log('🔗 Webhook URL:', this.config.analysisWebhookUrl);
+      console.log('⚙️ Config:', {
+        environment: this.config.environment,
+        timeout: this.config.timeout,
+        retryAttempts: this.config.retryAttempts,
+        hasApiKey: !!this.config.apiKey
+      });
+      
       this.serviceLogger.info('Sending message analysis request', {
         messageId: message.id,
         userId,
@@ -313,19 +325,38 @@ class N8nWebhookService {
   private async sendWithRetry(payload: N8nAnalysisPayload): Promise<N8nActualResponse[]> {
     let lastError: Error | null = null;
 
+    console.log('🔄 Starting sendWithRetry');
+    console.log('📤 Payload:', JSON.stringify(payload, null, 2));
+
     for (let attempt = 1; attempt <= this.config.retryAttempts!; attempt++) {
       try {
         console.log(`🔄 Attempt ${attempt}/${this.config.retryAttempts} to send webhook`);
 
-        const response = await fetch(this.config.analysisWebhookUrl, {
+        // Create a timeout promise for React Native compatibility
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Request timed out after ${this.config.timeout}ms. The n8n service may be slow to respond.`));
+          }, this.config.timeout!);
+        });
+
+        // Create the fetch promise
+        const fetchPromise = fetch(this.config.analysisWebhookUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'User-Agent': 'MessageAI/1.0',
             ...(this.config.apiKey && { 'Authorization': `Bearer ${this.config.apiKey}` })
           },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(this.config.timeout!)
+          body: JSON.stringify(payload)
+        });
+
+        // Race between fetch and timeout
+        const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+        
+        console.log('📡 Response received:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok
         });
 
         // Handle different HTTP status codes
@@ -356,11 +387,15 @@ class N8nWebhookService {
         let responseData: any;
         try {
           const responseText = await response.text();
+          console.log('📄 Raw response text:', responseText);
+          
           if (!responseText.trim()) {
             throw new Error('Empty response from n8n webhook');
           }
           responseData = JSON.parse(responseText);
+          console.log('📊 Parsed response data:', JSON.stringify(responseData, null, 2));
         } catch (parseError: any) {
+          console.error('❌ Parse error:', parseError);
           throw new Error(`Failed to parse response: ${parseError.message}`);
         }
         

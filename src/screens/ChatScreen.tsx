@@ -1,17 +1,17 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import MessageInput from '../components/MessageInput';
 import MessageList from '../components/MessageList';
@@ -51,6 +51,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
   const [chatData, setChatData] = useState<Chat | null>(chat || null);
   const [isLoadingChat, setIsLoadingChat] = useState(!chat);
   const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+  
+  // EMERGENCY FIX: Add throttling to prevent console spam
+  const loggedKeys = useRef(new Set<string>());
 
   // Presence data for chat participants
   const { presence, isLoading: isPresenceLoading, error: presenceError } = usePresence(chatData);
@@ -88,17 +91,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     loadChatData();
   }, [chatId, chat]);
 
-  // Debug: Log the chatId being received
+  // Debug: Log the chatId being received - THROTTLED TO PREVENT SPAM
   React.useEffect(() => {
-    console.log('🔍 ChatScreen received chatId:', chatId);
-    console.log('🔍 ChatScreen received chat object:', chat);
-    console.log('🔍 ChatScreen chatData state:', chatData);
-    console.log('🔗 ChatScreen deep link params:', deepLinkParams);
+    // Only log once per unique combination to prevent spam
+    const logKey = `${chatId}-${chat?.id}-${deepLinkParams?.action}`;
+    if (!loggedKeys.current.has(logKey)) {
+      console.log('🔍 ChatScreen received chatId:', chatId);
+      console.log('🔍 ChatScreen received chat object:', chat);
+      console.log('🔍 ChatScreen chatData state:', chatData);
+      console.log('🔗 ChatScreen deep link params:', deepLinkParams);
+      loggedKeys.current.add(logKey);
+    }
   }, [chatId, chat, chatData, deepLinkParams]);
 
-  // Track active chat for notification suppression
+  // Track active chat for notification suppression - THROTTLED
   React.useEffect(() => {
-    console.log('💬 ChatScreen: Setting active chat to:', chatId);
+    const logKey = `active-chat-${chatId}`;
+    if (!loggedKeys.current.has(logKey)) {
+      console.log('💬 ChatScreen: Setting active chat to:', chatId);
+      loggedKeys.current.add(logKey);
+    }
     activeChatService.updateActiveChat(chatId);
     
     // Cleanup: Clear active chat when component unmounts
@@ -127,7 +139,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     getMessageById
   } = useMessages({
     chatId,
-    enableRealTime: true,
+    enableRealTime: false, // EMERGENCY FIX: Temporarily disable to stop console spam
     batchSize: 50,
     onError: (error) => {
       console.error('Message error:', error);

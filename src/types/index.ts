@@ -25,22 +25,3 @@ export {
     isRetryableError
 } from './errors';
 
-// Re-export commonly used types for convenience
-export type {
-    Chat as IChat,
-    ErrorType as IError, Message as IMessage,
-    User as IUser
-} from './message';
-
-export type {
-    User as IUser
-} from './user';
-
-export type {
-    Chat as IChat
-} from './chat';
-
-export type {
-    ErrorType as IError
-} from './errors';
-
