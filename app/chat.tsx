@@ -10,11 +10,30 @@ import Animated, {
 import ChatScreen from '../src/screens/ChatScreen';
 
 export default function ChatRoute() {
-  const { chatId } = useLocalSearchParams<{ chatId: string }>();
+  const { 
+    chatId, 
+    messageId, 
+    senderId, 
+    chatName, 
+    chatType, 
+    messageText 
+  } = useLocalSearchParams<{ 
+    chatId: string;
+    messageId?: string;
+    senderId?: string;
+    chatName?: string;
+    chatType?: 'direct' | 'group';
+    messageText?: string;
+  }>();
   const router = useRouter();
   
-  // Use a default test chat ID if none provided
-  const testChatId = chatId || 'test-chat-123';
+  // Validate chatId - don't use fallback for production
+  if (!chatId) {
+    console.error('❌ ChatRoute: No chatId provided in route parameters');
+    // Navigate back to home if no chatId
+    router.replace('/' as any);
+    return null;
+  }
   
   // Swipe gesture values
   const translateX = useSharedValue(0);
@@ -56,8 +75,15 @@ export default function ChatRoute() {
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[{ flex: 1 }, animatedStyle]}>
           <ChatScreen 
-            chatId={testChatId}
+            chatId={chatId}
             onBack={handleBack}
+            deepLinkParams={{
+              messageId,
+              senderId,
+              chatName,
+              chatType,
+              messageText
+            }}
           />
         </Animated.View>
       </GestureDetector>

@@ -18,27 +18,39 @@ import MessageList from '../components/MessageList';
 import PresenceIndicator from '../components/PresenceIndicator';
 import useMessages from '../hooks/useMessages';
 import { usePresence } from '../hooks/usePresence';
+import activeChatService from '../services/activeChatService';
 import AuthService from '../services/auth';
 import ChatService from '../services/chat';
 import MessagingService from '../services/messaging';
 import { Chat, Message, MessageType } from '../types';
+
+interface DeepLinkParams {
+  messageId?: string;
+  senderId?: string;
+  chatName?: string;
+  chatType?: 'direct' | 'group';
+  messageText?: string;
+}
 
 interface ChatScreenProps {
   chatId: string;
   chat?: Chat;
   onBack?: () => void;
   onChatSettings?: () => void;
+  deepLinkParams?: DeepLinkParams;
 }
 
 const ChatScreen: React.FC<ChatScreenProps> = ({
   chatId,
   chat,
   onBack,
-  onChatSettings
+  onChatSettings,
+  deepLinkParams
 }) => {
   const router = useRouter();
   const [chatData, setChatData] = useState<Chat | null>(chat || null);
   const [isLoadingChat, setIsLoadingChat] = useState(!chat);
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null);
 
   // Presence data for chat participants
   const { presence, isLoading: isPresenceLoading, error: presenceError } = usePresence(chatData);
@@ -53,6 +65,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
 
       try {
         setIsLoadingChat(true);
+        setChatLoadError(null);
         console.log('🔍 Loading chat data for chatId:', chatId);
         
         const result = await ChatService.getChat(chatId);
@@ -62,9 +75,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
           setChatData(result.data);
         } else {
           console.error('❌ Failed to load chat data:', result.error);
+          setChatLoadError(result.error?.message || 'Failed to load chat');
         }
       } catch (error) {
         console.error('💥 Error loading chat data:', error);
+        setChatLoadError('An error occurred while loading the chat');
       } finally {
         setIsLoadingChat(false);
       }
@@ -78,7 +93,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     console.log('🔍 ChatScreen received chatId:', chatId);
     console.log('🔍 ChatScreen received chat object:', chat);
     console.log('🔍 ChatScreen chatData state:', chatData);
-  }, [chatId, chat, chatData]);
+    console.log('🔗 ChatScreen deep link params:', deepLinkParams);
+  }, [chatId, chat, chatData, deepLinkParams]);
+
+  // Track active chat for notification suppression
+  React.useEffect(() => {
+    console.log('💬 ChatScreen: Setting active chat to:', chatId);
+    activeChatService.updateActiveChat(chatId);
+    
+    // Cleanup: Clear active chat when component unmounts
+    return () => {
+      console.log('💬 ChatScreen: Clearing active chat');
+      activeChatService.updateActiveChat(null);
+    };
+  }, [chatId]);
 
   // Use the custom hook for message management
   const {
@@ -302,6 +330,48 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
     return 'Group Chat';
   }, [chatData]);
 
+  // Chat loading error state
+  if (chatLoadError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{chatLoadError}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton} 
+            onPress={() => {
+              setChatLoadError(null);
+              // Reload chat data
+              const loadChatData = async () => {
+                try {
+                  setIsLoadingChat(true);
+                  const result = await ChatService.getChat(chatId);
+                  if (result.success) {
+                    setChatData(result.data);
+                  } else {
+                    setChatLoadError(result.error?.message || 'Failed to load chat');
+                  }
+                } catch (error) {
+                  setChatLoadError('An error occurred while loading the chat');
+                } finally {
+                  setIsLoadingChat(false);
+                }
+              };
+              loadChatData();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.retryButton, { backgroundColor: '#8E8E93', marginTop: 8 }]} 
+            onPress={() => router.back()}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // Error state
   if (error && messages.length === 0) {
     return (
@@ -385,6 +455,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
             hasMoreMessages={hasMoreMessages}
             totalParticipants={chatData?.participants.length || 0}
             isGroupChat={chatData?.type === 'group'}
+            scrollToMessageId={deepLinkParams?.messageId}
           />
         )}
 

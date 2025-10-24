@@ -23,7 +23,10 @@ import {
     isRetryableError
 } from '../types';
 import { MessageStatusType } from '../types/messageStatus';
+import activeChatService from './activeChatService';
+import ChatService from './chat';
 import { messageStatusService } from './messageStatus';
+import notificationService from './notificationService';
 
 class MessagingService {
   private readonly MESSAGES_COLLECTION = 'messages';
@@ -80,6 +83,11 @@ class MessagingService {
       });
 
       console.log('✅ Message status updated to SENT');
+
+      // Trigger notification checks (non-blocking)
+      this.triggerNotificationChecks(message).catch(error => {
+        console.log('⚠️ Notification checks failed (non-critical):', error);
+      });
 
       // Update chat's last message (non-blocking)
       console.log('🔄 Updating chat last message...');
@@ -393,6 +401,11 @@ class MessagingService {
       
       if (result.success) {
         console.log(`✅ Marked ${existingMessageIds.length} messages as read for user ${userId} in chat ${chatId}`);
+        
+        // Trigger notification badge update (non-blocking)
+        this.updateNotificationBadge(userId, chatId).catch(error => {
+          console.log('⚠️ Notification badge update failed (non-critical):', error);
+        });
       } else {
         console.error('❌ Failed to mark messages as read via status service:', result.error);
       }
@@ -494,6 +507,11 @@ class MessagingService {
       
       if (result.success) {
         console.log(`✅ Marked all ${unreadMessages.length} unread messages as read for user ${userId} in chat ${chatId}`);
+        
+        // Trigger notification badge update (non-blocking)
+        this.updateNotificationBadge(userId, chatId).catch(error => {
+          console.log('⚠️ Notification badge update failed (non-critical):', error);
+        });
       }
 
       return result;
@@ -593,6 +611,109 @@ class MessagingService {
           message: error.message || 'Failed to get message read count'
         }))
       };
+    }
+  }
+
+  /**
+   * Trigger notification checks for a new message
+   */
+  private async triggerNotificationChecks(message: Message): Promise<void> {
+    try {
+      console.log('🔔 MessagingService: Triggering notification checks for message:', message.id);
+      
+      // Check if user is currently viewing this chat
+      const isInActiveChat = activeChatService.isInSpecificChat(message.chatId);
+      
+      if (isInActiveChat) {
+        console.log('🔔 MessagingService: User is in active chat, skipping notification checks');
+        return;
+      }
+      
+      // Check if notifications are enabled
+      const notificationsEnabled = await notificationService.areNotificationsEnabled();
+      if (!notificationsEnabled) {
+        console.log('🔔 MessagingService: Notifications disabled, skipping checks');
+        return;
+      }
+      
+      // Get chat type for better notification suppression logic
+      let chatType: 'direct' | 'group' = 'direct'; // Default to direct
+      try {
+        const chatResult = await ChatService.getChat(message.chatId);
+        if (chatResult.success) {
+          chatType = (chatResult.data.type === 'group' ? 'group' : 'direct') as 'direct' | 'group';
+        }
+      } catch (error) {
+        console.log('🔔 MessagingService: Could not fetch chat type, using default:', error);
+      }
+      
+      // Trigger notification service to check if notification should be sent
+      // This will check preferences, quiet hours, etc.
+      await notificationService.checkAndSendNotification({
+        chatId: message.chatId,
+        messageId: message.id,
+        senderId: message.senderId,
+        messageText: message.text,
+        timestamp: message.timestamp,
+        chatType: chatType
+      });
+      
+    } catch (error) {
+      console.error('🔔 MessagingService: Error in notification checks:', error);
+    }
+  }
+
+  /**
+   * Update notification badge count when messages are read
+   */
+  private async updateNotificationBadge(userId: string, chatId: string): Promise<void> {
+    try {
+      console.log('🔔 MessagingService: Updating notification badge for user:', userId);
+      
+      // Get unread message count for this chat
+      const unreadCount = await this.getUnreadMessageCount(chatId, userId);
+      
+      if (unreadCount > 0) {
+        // Update badge count
+        await notificationService.setBadgeCount(unreadCount);
+      } else {
+        // Clear badge if no unread messages
+        await notificationService.clearBadgeCount();
+      }
+      
+    } catch (error) {
+      console.error('🔔 MessagingService: Error updating notification badge:', error);
+    }
+  }
+
+  /**
+   * Get unread message count for a user in a chat
+   */
+  private async getUnreadMessageCount(chatId: string, userId: string): Promise<number> {
+    try {
+      const messagesQuery = query(
+        collection(db, this.MESSAGES_COLLECTION),
+        where('chatId', '==', chatId),
+        orderBy('timestamp', 'desc')
+      );
+
+      const messagesSnapshot = await getDocs(messagesQuery);
+      
+      let unreadCount = 0;
+      messagesSnapshot.forEach((doc) => {
+        const messageData = doc.data();
+        const readBy = messageData.readBy || {};
+        
+        // Count unread messages (excluding sender's own messages)
+        if (messageData.senderId !== userId && !readBy[userId]) {
+          unreadCount++;
+        }
+      });
+
+      return unreadCount;
+    } catch (error) {
+      console.error('🔔 MessagingService: Error getting unread count:', error);
+      return 0;
     }
   }
 

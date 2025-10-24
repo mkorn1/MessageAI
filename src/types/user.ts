@@ -23,6 +23,14 @@ export interface User {
   pushNotifications: boolean;
   emailNotifications: boolean;
   
+  // FCM token for push notifications
+  fcmToken?: string | null;
+  lastTokenUpdate?: Date;
+  notificationPreferences?: {
+    enabled: boolean;
+    foregroundOnly: boolean;
+  };
+  
   // Chat preferences
   theme: 'light' | 'dark' | 'auto';
   language: string;

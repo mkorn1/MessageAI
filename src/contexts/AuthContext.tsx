@@ -1,5 +1,9 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import NotificationPermissionsModal from '../components/NotificationPermissionsModal';
+import { useNotificationPermissions } from '../hooks/useNotificationPermissions';
 import AuthService, { User } from '../services/auth';
+import notificationPreferencesService from '../services/notificationPreferencesService';
+import notificationService from '../services/notificationService';
 
 interface AuthContextType {
   user: User | null;
@@ -24,14 +28,45 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const previousUserRef = useRef<User | null>(null);
+  
+  // Notification permissions hook
+  const {
+    showPermissionModal,
+    requestPermissions,
+    skipPermissions,
+  } = useNotificationPermissions();
 
   useEffect(() => {
     console.log('🔐 AuthContext: Setting up auth state listener');
     
+    // Initialize notification service
+    notificationService.initialize();
+    
     // Listen to authentication state changes
-    const unsubscribe = AuthService.onAuthStateChanged((user) => {
-      console.log('🔐 AuthContext: Auth state changed:', user ? `User ${user.uid}` : 'No user');
-      setUser(user);
+    const unsubscribe = AuthService.onAuthStateChanged(async (newUser) => {
+      console.log('🔐 AuthContext: Auth state changed:', newUser ? `User ${newUser.uid}` : 'No user');
+      
+      if (newUser) {
+        // User logged in - register FCM token with retry
+        console.log('🔔 AuthContext: User logged in, registering FCM token');
+        await notificationService.registerTokenWithUserWithRetry(newUser.uid);
+        
+        // Load notification preferences
+        console.log('🔔 AuthContext: Loading notification preferences');
+        await notificationPreferencesService.loadPreferences(newUser.uid);
+      } else if (previousUserRef.current) {
+        // User logged out - remove FCM token
+        console.log('🔔 AuthContext: User logged out, removing FCM token');
+        await notificationService.removeTokenFromUser(previousUserRef.current.uid);
+        
+        // Clear notification preferences
+        console.log('🔔 AuthContext: Clearing notification preferences');
+        notificationPreferencesService.clearListeners();
+      }
+      
+      previousUserRef.current = newUser;
+      setUser(newUser);
       setIsLoading(false);
     });
 
@@ -58,6 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signOut = async () => {
     try {
+      // Remove FCM token before signing out
+      if (user) {
+        console.log('🔔 AuthContext: Signing out, removing FCM token');
+        await notificationService.removeTokenFromUser(user.uid);
+      }
+      
       await AuthService.signOut();
       setUser(null);
     } catch (error) {
@@ -71,5 +112,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signOut,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      <NotificationPermissionsModal
+        visible={showPermissionModal}
+        onClose={skipPermissions}
+        onPermissionGranted={requestPermissions}
+      />
+    </AuthContext.Provider>
+  );
 };

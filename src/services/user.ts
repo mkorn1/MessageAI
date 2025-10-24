@@ -37,6 +37,12 @@ class UserService {
           allowMessagesFrom: data.allowMessagesFrom || 'everyone',
           pushNotifications: data.pushNotifications ?? true,
           emailNotifications: data.emailNotifications ?? true,
+          fcmToken: data.fcmToken || null,
+          lastTokenUpdate: data.lastTokenUpdate?.toDate(),
+          notificationPreferences: data.notificationPreferences || {
+            enabled: true,
+            foregroundOnly: true
+          },
           theme: data.theme || 'auto',
           language: data.language || 'en'
         });
@@ -115,6 +121,12 @@ class UserService {
             allowMessagesFrom: data.allowMessagesFrom || 'everyone',
             pushNotifications: data.pushNotifications ?? true,
             emailNotifications: data.emailNotifications ?? true,
+            fcmToken: data.fcmToken || null,
+            lastTokenUpdate: data.lastTokenUpdate?.toDate(),
+            notificationPreferences: data.notificationPreferences || {
+              enabled: true,
+              foregroundOnly: true
+            },
             theme: data.theme || 'auto',
             language: data.language || 'en'
           });
@@ -191,6 +203,12 @@ class UserService {
         allowMessagesFrom: data.allowMessagesFrom || 'everyone',
         pushNotifications: data.pushNotifications ?? true,
         emailNotifications: data.emailNotifications ?? true,
+        fcmToken: data.fcmToken || null,
+        lastTokenUpdate: data.lastTokenUpdate?.toDate(),
+        notificationPreferences: data.notificationPreferences || {
+          enabled: true,
+          foregroundOnly: true
+        },
         theme: data.theme || 'auto',
         language: data.language || 'en'
       };
@@ -272,6 +290,12 @@ class UserService {
             allowMessagesFrom: data.allowMessagesFrom || 'everyone',
             pushNotifications: data.pushNotifications ?? true,
             emailNotifications: data.emailNotifications ?? true,
+            fcmToken: data.fcmToken || null,
+            lastTokenUpdate: data.lastTokenUpdate?.toDate(),
+            notificationPreferences: data.notificationPreferences || {
+              enabled: true,
+              foregroundOnly: true
+            },
             theme: data.theme || 'auto',
             language: data.language || 'en'
           });

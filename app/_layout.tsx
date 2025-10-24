@@ -4,7 +4,11 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ActiveChatProvider } from '../src/contexts/ActiveChatContext';
+import { AppStateProvider } from '../src/contexts/AppStateContext';
 import { AuthProvider } from '../src/contexts/AuthContext';
+import { DeepLinkProvider } from '../src/contexts/DeepLinkContext';
+import { NotificationPreferenceProvider } from '../src/contexts/NotificationPreferenceContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -15,17 +19,25 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          <Stack.Screen name="firebase-test/index" options={{ title: 'Firebase Test' }} />
-          <Stack.Screen name="test-data" options={{ title: 'Create Test Data' }} />
-          <Stack.Screen name="login/index" options={{ title: 'Sign In', headerShown: false }} />
-          <Stack.Screen name="chat" options={{ title: 'Chat', headerShown: false }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <AppStateProvider>
+        <ActiveChatProvider>
+          <DeepLinkProvider>
+            <NotificationPreferenceProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack>
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  <Stack.Screen name="firebase-test/index" options={{ title: 'Firebase Test' }} />
+                  <Stack.Screen name="test-data" options={{ title: 'Create Test Data' }} />
+                  <Stack.Screen name="login/index" options={{ title: 'Sign In', headerShown: false }} />
+                  <Stack.Screen name="chat" options={{ title: 'Chat', headerShown: false }} />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </NotificationPreferenceProvider>
+          </DeepLinkProvider>
+        </ActiveChatProvider>
+      </AppStateProvider>
     </AuthProvider>
   );
 }

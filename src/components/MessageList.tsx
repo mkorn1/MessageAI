@@ -17,6 +17,7 @@ interface MessageListProps {
   hasMoreMessages?: boolean;
   totalParticipants?: number; // Add total participants for group chat read count
   isGroupChat?: boolean; // Add flag to indicate if this is a group chat
+  scrollToMessageId?: string; // Message ID to scroll to when provided
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -31,7 +32,8 @@ const MessageList: React.FC<MessageListProps> = ({
   onRetryMessage,
   hasMoreMessages = false,
   totalParticipants,
-  isGroupChat
+  isGroupChat,
+  scrollToMessageId
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -48,6 +50,25 @@ const MessageList: React.FC<MessageListProps> = ({
       }, 100);
     }
   }, [messages.length]);
+
+  // Scroll to specific message when scrollToMessageId is provided
+  useEffect(() => {
+    if (scrollToMessageId && messages.length > 0) {
+      const messageIndex = messages.findIndex(msg => msg.id === scrollToMessageId);
+      if (messageIndex !== -1) {
+        console.log('🔗 MessageList: Scrolling to message:', scrollToMessageId, 'at index:', messageIndex);
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({ 
+            index: messageIndex, 
+            animated: true,
+            viewPosition: 0.5 // Center the message in view
+          });
+        }, 500); // Delay to ensure messages are rendered
+      } else {
+        console.warn('🔗 MessageList: Message not found for scrollToMessageId:', scrollToMessageId);
+      }
+    }
+  }, [scrollToMessageId, messages]);
 
   // Handle scroll events to track if user is near bottom
   const handleScroll = useCallback((event: any) => {

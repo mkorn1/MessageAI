@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthService from '../services/auth';
 import MessagingService from '../services/messaging';
+import notificationService from '../services/notificationService';
 import { AppError, Message, MessageType } from '../types';
 
 interface UseMessagesOptions {
@@ -29,6 +30,7 @@ interface UseMessagesReturn {
   retryFailedMessage: (messageId: string) => Promise<void>;
   editMessage: (messageId: string, newText: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  markMessagesAsRead: (messageIds: string[]) => Promise<void>;
   
   // Utilities
   clearError: () => void;
@@ -188,7 +190,37 @@ export const useMessages = ({
                   // Mark as read immediately for new messages
                   MessagingService.markMessagesAsRead(chatId, currentUser.uid, trulyNewMessages.map(msg => msg.id));
                   lastReadMarkTime.current = now;
+                  
+                  // Trigger notification badge update (non-blocking)
+                  notificationService.clearBadgeCount().catch(error => {
+                    console.log('⚠️ Notification badge clear failed (non-critical):', error);
+                  });
                 }
+              }
+              
+              // Trigger notification checks for new messages from other users
+              const existingMessageIds = new Set(prevMessages.map(msg => msg.id));
+              const newMessagesFromOthers = combinedMessages.filter(msg => 
+                !existingMessageIds.has(msg.id) &&
+                msg.senderId !== currentUser.uid && 
+                !msg.id.startsWith('temp_')
+              );
+              
+              if (newMessagesFromOthers.length > 0) {
+                console.log('🔔 useMessages: New messages from others detected:', newMessagesFromOthers.length);
+                // Trigger notification checks for each new message
+                newMessagesFromOthers.forEach(message => {
+                  notificationService.checkAndSendNotification({
+                    chatId: message.chatId,
+                    messageId: message.id,
+                    senderId: message.senderId,
+                    messageText: message.text,
+                    timestamp: message.timestamp,
+                    chatType: 'direct' // Default to direct, will be overridden by MessagingService
+                  }).catch(error => {
+                    console.log('⚠️ Notification check failed (non-critical):', error);
+                  });
+                });
               }
               
               return combinedMessages;
@@ -293,6 +325,18 @@ export const useMessages = ({
           return newMessages;
         });
         console.log('✅ Message added to messages list');
+        
+        // Trigger notification checks for other participants (non-blocking)
+        notificationService.checkAndSendNotification({
+          chatId: result.data.chatId,
+          messageId: result.data.id,
+          senderId: result.data.senderId,
+          messageText: result.data.text,
+          timestamp: result.data.timestamp,
+          chatType: 'direct' // Default to direct, will be overridden by MessagingService
+        }).catch(error => {
+          console.log('⚠️ Notification check failed (non-critical):', error);
+        });
       } else {
         // Remove optimistic message and show error
         console.log('❌ Message send failed:', result.error);
@@ -486,6 +530,29 @@ export const useMessages = ({
     return messages.filter(msg => msg.status === status);
   }, [messages]);
 
+  // Mark messages as read and trigger notification updates
+  const markMessagesAsRead = useCallback(async (messageIds: string[]) => {
+    const currentUser = currentUserRef.current;
+    if (!currentUser || !messageIds.length) return;
+
+    try {
+      const result = await MessagingService.markMessagesAsRead(chatId, currentUser.uid, messageIds);
+      
+      if (result.success) {
+        console.log('📖 useMessages: Marked messages as read:', messageIds.length);
+        
+        // Trigger notification badge update (non-blocking)
+        notificationService.clearBadgeCount().catch(error => {
+          console.log('⚠️ Notification badge clear failed (non-critical):', error);
+        });
+      } else {
+        console.error('❌ Failed to mark messages as read:', result.error);
+      }
+    } catch (error) {
+      console.error('❌ Error marking messages as read:', error);
+    }
+  }, [chatId]);
+
   return {
     // Message data
     messages,
@@ -505,6 +572,7 @@ export const useMessages = ({
     retryFailedMessage,
     editMessage,
     deleteMessage,
+    markMessagesAsRead,
     
     // Utilities
     clearError,

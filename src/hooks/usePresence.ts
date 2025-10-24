@@ -99,6 +99,55 @@ export const usePresence = (chat: Chat | null): UsePresenceReturn => {
     }
   }, [chat]);
 
+  /**
+   * Handle presence change notifications
+   */
+  const handlePresenceChange = useCallback(async (newPresence: ChatPresence, previousPresence: ChatPresence | null) => {
+    if (!chat || !previousPresence) return;
+
+    try {
+      // Check for users who came online
+      const previousOnlineUsers = new Set(
+        previousPresence.participants
+          .filter(p => p.isOnline)
+          .map(p => p.userId)
+      );
+      
+      const currentOnlineUsers = new Set(
+        newPresence.participants
+          .filter(p => p.isOnline)
+          .map(p => p.userId)
+      );
+
+      // Find users who came online
+      const usersCameOnline = Array.from(currentOnlineUsers).filter(
+        userId => !previousOnlineUsers.has(userId)
+      );
+
+      // Find users who went offline
+      const usersWentOffline = Array.from(previousOnlineUsers).filter(
+        userId => !currentOnlineUsers.has(userId)
+      );
+
+      // Trigger notification checks for users who came online
+      if (usersCameOnline.length > 0) {
+        console.log('🔔 usePresence: Users came online:', usersCameOnline);
+        
+        // Log that users came online for notification system awareness
+        // Future implementation could trigger delayed notifications here
+        console.log('🔔 usePresence: Online status change detected for notification system');
+      }
+
+      // Log users who went offline (for debugging)
+      if (usersWentOffline.length > 0) {
+        console.log('🔔 usePresence: Users went offline:', usersWentOffline);
+      }
+
+    } catch (error) {
+      console.error('🔔 usePresence: Error handling presence change:', error);
+    }
+  }, [chat]);
+
   // Set up real-time listener for user presence updates
   useEffect(() => {
     if (!chat || !chat.participants || chat.participants.length === 0) {
