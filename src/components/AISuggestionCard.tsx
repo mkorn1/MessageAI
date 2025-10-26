@@ -244,16 +244,16 @@ export const AISuggestionCard: React.FC<AISuggestionCardProps> = ({
   };
 
   const renderActionButtons = () => {
-    if (suggestion.status !== AISuggestionStatus.Pending) {
+    if (suggestion.status !== AISuggestionStatus.PENDING) {
       return (
         <View style={styles.statusContainer}>
           <IconSymbol
-            name={suggestion.status === AISuggestionStatus.Confirmed ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
+            name={suggestion.status === AISuggestionStatus.CONFIRMED ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
             size={20}
-            color={suggestion.status === AISuggestionStatus.Confirmed ? '#34C759' : '#FF3B30'}
+            color={suggestion.status === AISuggestionStatus.CONFIRMED ? '#34C759' : '#FF3B30'}
           />
           <Text style={[styles.statusText, { color: theme.text }]}>
-            {suggestion.status === AISuggestionStatus.Confirmed ? 'Confirmed' : 'Rejected'}
+            {suggestion.status === AISuggestionStatus.CONFIRMED ? 'Confirmed' : 'Rejected'}
           </Text>
         </View>
       );

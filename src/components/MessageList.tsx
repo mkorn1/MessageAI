@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useMessageStatuses } from '../hooks/useMessageStatuses';
 import { Message } from '../types';
@@ -37,10 +37,38 @@ const MessageList: React.FC<MessageListProps> = ({
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  const hasInitialScrolled = useRef(false);
+  const previousFirstMessageId = useRef<string | null>(null);
   
-  // Get message IDs for status fetching
-  const messageIds = messages.map(msg => msg.id);
+  // Get message IDs for status fetching - MEMOIZED to prevent re-subscriptions
+  const messageIds = useMemo(() => messages.map(msg => msg.id), [messages]);
   const { getStatus } = useMessageStatuses(messageIds);
+
+  // Reset initial scroll flag when messages change significantly (e.g., switching chats)
+  useEffect(() => {
+    // If messages array is completely different (different chat), reset the flag
+    if (messages.length > 0) {
+      const currentFirstMessageId = messages[0]?.id || null;
+      // Only reset if we've already scrolled and the first message ID changed
+      // This handles chat switching
+      const shouldReset = hasInitialScrolled.current && previousFirstMessageId.current !== null && previousFirstMessageId.current !== currentFirstMessageId;
+      if (shouldReset) {
+        hasInitialScrolled.current = false;
+      }
+      previousFirstMessageId.current = currentFirstMessageId;
+    }
+  }, [messageIds]);
+
+  // Initial scroll to bottom when messages first load
+  useEffect(() => {
+    if (messages.length > 0 && !hasInitialScrolled.current) {
+      // Scroll to bottom after a brief delay to ensure FlatList is laid out
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+        hasInitialScrolled.current = true;
+      }, 300);
+    }
+  }, [messages.length]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import AuthService from '../services/auth';
 import messageNotificationService from '../services/messageNotificationService';
 import MessagingService from '../services/messaging';
+import n8nMessageAnalysisService from '../services/n8nMessageAnalysisService';
 import n8nWebhookService from '../services/n8nWebhookService';
 import notificationService from '../services/notificationService';
 import { AppError, Message, MessageType } from '../types';
@@ -116,8 +117,38 @@ export const useMessages = ({
       // Send to n8n webhook for analysis
       const result = await n8nWebhookService.sendMessageAnalysis(message, chatContext, userId);
       
-      if (result.success) {
+      if (result.success && result.data) {
         console.log('✅ AI analysis completed for message:', message.id);
+        console.log('📊 Analysis response items:', result.data.length);
+        
+        // TEMPORARY: Log the full webhook response for debugging
+        console.log('\n═══════════════════════════════════════════════════════════');
+        console.log('🔍 WEBHOOK RESPONSE LOG (TEMPORARY)');
+        console.log('═══════════════════════════════════════════════════════════');
+        console.log('📝 Message ID:', message.id);
+        console.log('💬 Message Text:', message.text);
+        console.log('👤 Sender ID:', message.senderId);
+        console.log('📊 Response Items Count:', result.data.length);
+        console.log('───────────────────────────────────────────────────────────');
+        console.log('📦 Full Webhook Response:');
+        console.log(JSON.stringify(result.data, null, 2));
+        console.log('═══════════════════════════════════════════════════════════\n');
+        
+        // Store the analysis response in Firestore
+        const storeResult = await n8nMessageAnalysisService.storeAnalysis({
+          messageId: message.id,
+          chatId: message.chatId,
+          senderId: message.senderId,
+          analysisResponse: result.data,
+          chatContext: chatContext,
+          processed: false
+        });
+        
+        if (storeResult.success) {
+          console.log('✅ Analysis stored in n8n_message_analysis:', storeResult.data?.id);
+        } else {
+          console.error('⚠️ Failed to store analysis:', storeResult.error?.message);
+        }
       } else {
         console.log('⚠️ AI analysis failed for message:', message.id, result.error?.message);
         // Remove from analyzed set so it can be retried
@@ -215,11 +246,11 @@ export const useMessages = ({
                   // Trigger AI analysis for new messages (non-blocking)
                   // Only analyze truly new messages, not updated ones
                   // TEMPORARILY DISABLED to prevent infinite loop - re-enable after testing
-                  // if (result.newMessages.includes(message)) {
-                  //   triggerAIAnalysis(message, result.messages, currentUser.uid).catch(() => {
-                  //     // Silent fail for non-critical AI analysis
-                  //   });
-                  // }
+                  if (result.newMessages.includes(message)) {
+                    triggerAIAnalysis(message, result.messages, currentUser.uid).catch(() => {
+                      // Silent fail for non-critical AI analysis
+                    });
+                  }
                 });
               }
               
@@ -251,7 +282,7 @@ export const useMessages = ({
     } finally {
       setIsLoading(false);
     }
-  }, [chatId, enableRealTime, batchSize, onError]);
+  }, [chatId, enableRealTime, batchSize, onError, triggerAIAnalysis]);
 
   // Initialize messages and real-time listener
   useEffect(() => {
@@ -326,6 +357,8 @@ export const useMessages = ({
         // Replace optimistic message with real message from server
         console.log('✅ Message sent successfully, replacing optimistic message');
         console.log('🔄 Replacing message:', optimisticMessage?.id, 'with server data:', result.data);
+        
+        // Update messages state and trigger AI analysis
         setMessages(prev => {
           // Create a map for deduplication
           const messageMap = new Map<string, Message>();
@@ -349,6 +382,13 @@ export const useMessages = ({
             .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
           
           console.log('📝 Updated messages count:', newMessages.length);
+          
+          // Trigger AI analysis for the sent message (non-blocking)
+          const contextMessages = newMessages.slice(-50); // Get last 50 messages
+          triggerAIAnalysis(realMessage, contextMessages, currentUser.uid).catch(error => {
+            console.log('⚠️ AI analysis failed (non-critical):', error);
+          });
+          
           return newMessages;
         });
         console.log('✅ Message added to messages list');
@@ -389,7 +429,7 @@ export const useMessages = ({
       setError(error);
       onError?.(error);
     }
-  }, [chatId, onError]);
+  }, [chatId, onError, triggerAIAnalysis]);
 
   // Refresh messages
   const refreshMessages = useCallback(async () => {

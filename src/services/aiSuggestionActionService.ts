@@ -32,7 +32,7 @@ class AISuggestionActionService {
       console.log('📋 Suggestion type:', suggestion.type);
 
       // Validate suggestion is confirmed
-      if (suggestion.status !== AISuggestionStatus.Confirmed) {
+      if (suggestion.status !== AISuggestionStatus.CONFIRMED) {
         return {
           success: false,
           error: createError({
@@ -74,7 +74,7 @@ class AISuggestionActionService {
 
       // Update suggestion with execution result
       const updateResult = await aiSuggestionService.updateSuggestion(suggestion.id, {
-        status: executionResult.success ? AISuggestionStatus.Executed : AISuggestionStatus.Confirmed,
+        status: executionResult.success ? AISuggestionStatus.EXECUTED : AISuggestionStatus.CONFIRMED,
         executedAt: new Date(),
         executionResult: {
           success: executionResult.success,

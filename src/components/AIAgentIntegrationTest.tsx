@@ -50,7 +50,7 @@ const AIAgentIntegrationTest: React.FC = () => {
     refresh: refreshSuggestions,
     getPendingSuggestionsCount,
   } = useAISuggestions({
-    status: AISuggestionStatus.Pending,
+    status: AISuggestionStatus.PENDING,
     enableRealtime: true,
   });
 

@@ -13,7 +13,6 @@ import AISuggestionList from '../../src/components/AISuggestionList';
 import NotificationList from '../../src/components/NotificationList';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useAISuggestions } from '../../src/hooks/useAISuggestions';
-import aiSuggestionActionService from '../../src/services/aiSuggestionActionService';
 import { AISuggestionStatus } from '../../src/types/aiSuggestion';
 
 const NotificationsScreen: React.FC = () => {
@@ -29,9 +28,10 @@ const NotificationsScreen: React.FC = () => {
     error: suggestionsError,
     refresh: refreshSuggestions,
     updateSuggestion,
+    deleteSuggestion,
     getPendingSuggestionsCount,
   } = useAISuggestions({
-    status: AISuggestionStatus.Pending,
+    status: AISuggestionStatus.PENDING,
     enableRealtime: true,
     onSuggestionUpdate: (suggestion) => {
       console.log('🔄 Suggestion updated:', suggestion.id);
@@ -67,53 +67,25 @@ const NotificationsScreen: React.FC = () => {
     console.log(`🎯 Suggestion ${action}:`, suggestionId);
     
     try {
-      // Update suggestion status first
-      const status = action === 'confirm' ? AISuggestionStatus.Confirmed : AISuggestionStatus.Rejected;
-      const timestamp = new Date();
-      
-      const updateResult = await updateSuggestion(suggestionId, {
-        status,
-        ...(action === 'confirm' ? { confirmedAt: timestamp } : { rejectedAt: timestamp }),
-      });
-
-      if (!updateResult.success) {
-        throw new Error(updateResult.error?.message || `Failed to ${action} suggestion`);
-      }
-
-      console.log(`✅ Suggestion ${action}ed successfully`);
-
-      // If confirmed, execute the action
-      if (action === 'confirm' && updateResult.data) {
-        console.log('🎯 Executing confirmed suggestion action');
-        
-        const executionResult = await aiSuggestionActionService.executeSuggestion(updateResult.data);
-        
-        if (executionResult.success && executionResult.data) {
-          const result = executionResult.data;
-          
-          if (result.success) {
-            Alert.alert(
-              'Action Executed',
-              result.message || 'Suggestion action completed successfully',
-              [{ text: 'OK' }]
-            );
-            console.log('✅ Suggestion action executed successfully');
-          } else {
-            Alert.alert(
-              'Action Failed',
-              result.error || 'Failed to execute suggestion action',
-              [{ text: 'OK' }]
-            );
-            console.error('❌ Suggestion action failed:', result.error);
-          }
-        } else {
-          Alert.alert(
-            'Action Failed',
-            executionResult.error?.message || 'Failed to execute suggestion action',
-            [{ text: 'OK' }]
-          );
-          console.error('❌ Failed to execute suggestion action:', executionResult.error?.message);
+      if (action === 'reject') {
+        // Delete the suggestion entirely
+        const deleteResult = await deleteSuggestion(suggestionId);
+        if (!deleteResult.success) {
+          throw new Error(deleteResult.error?.message || 'Failed to delete suggestion');
         }
+        console.log('🗑️ Suggestion deleted successfully');
+      } else {
+        // Update suggestion status to confirmed
+        const updateResult = await updateSuggestion(suggestionId, {
+          status: AISuggestionStatus.CONFIRMED,
+          confirmedAt: new Date(),
+        });
+
+        if (!updateResult.success) {
+          throw new Error(updateResult.error?.message || 'Failed to confirm suggestion');
+        }
+
+        console.log('✅ Suggestion accepted - functionality will be added later');
       }
 
     } catch (error: any) {

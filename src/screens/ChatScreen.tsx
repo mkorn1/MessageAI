@@ -2,27 +2,32 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import AISuggestionCard from '../components/AISuggestionCard';
 import MessageInput from '../components/MessageInput';
 import MessageList from '../components/MessageList';
 import PresenceIndicator from '../components/PresenceIndicator';
+import { useAISuggestions } from '../hooks/useAISuggestions';
 import useMessages from '../hooks/useMessages';
+import { useN8nAnalysisProcessing } from '../hooks/useN8nAnalysisProcessing';
 import { usePresence } from '../hooks/usePresence';
 import activeChatService from '../services/activeChatService';
 import AuthService from '../services/auth';
 import ChatService from '../services/chat';
 import MessagingService from '../services/messaging';
 import { Chat, Message, MessageType } from '../types';
+import { AISuggestionStatus } from '../types/aiSuggestion';
 
 interface DeepLinkParams {
   messageId?: string;
@@ -124,6 +129,51 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
   const handleMessageError = useCallback((error: any) => {
     console.error('Message error:', error);
   }, []);
+
+  // Fetch AI suggestions for this chat
+  const {
+    suggestions: aiSuggestions,
+    loading: aiSuggestionsLoading,
+    updateSuggestion: updateAISuggestion,
+    deleteSuggestion,
+  } = useAISuggestions({
+    chatId,
+    status: AISuggestionStatus.PENDING,
+    limit: 10,
+    enableRealtime: false,
+  });
+
+  // Process n8n analyses and create suggestions
+  useN8nAnalysisProcessing({
+    chatId,
+    enabled: true,
+    onSuggestionsCreated: (suggestions) => {
+      console.log('✅ Created', suggestions.length, 'suggestions from n8n analyses');
+    }
+  });
+
+  // Handle AI suggestion actions
+  const handleSuggestionConfirm = useCallback(async (suggestionId: string) => {
+    try {
+      console.log('✅ Suggestion accepted:', suggestionId);
+      await updateAISuggestion(suggestionId, {
+        status: AISuggestionStatus.CONFIRMED,
+        confirmedAt: new Date(),
+      });
+    } catch (error) {
+      console.error('❌ Failed to confirm suggestion:', error);
+    }
+  }, [updateAISuggestion]);
+
+  const handleSuggestionReject = useCallback(async (suggestionId: string) => {
+    try {
+      console.log('🗑️ Suggestion declined - deleting:', suggestionId);
+      await deleteSuggestion(suggestionId);
+      console.log('✅ Suggestion deleted successfully');
+    } catch (error) {
+      console.error('❌ Failed to delete suggestion:', error);
+    }
+  }, [deleteSuggestion]);
 
   // Use the custom hook for message management
   const {
@@ -458,20 +508,47 @@ const ChatScreen: React.FC<ChatScreenProps> = ({
             <Text style={styles.loadingText}>Loading messages...</Text>
           </View>
         ) : (
-          <MessageList
-            messages={messages}
-            currentUserId={AuthService.getCurrentUser()?.uid || ''}
-            isLoading={isLoading}
-            isRefreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            onLoadMore={handleLoadMore}
-            onMessagePress={handleMessagePress}
-            onMessageLongPress={handleMessageLongPress}
-            hasMoreMessages={hasMoreMessages}
-            totalParticipants={chatData?.participants.length || 0}
-            isGroupChat={chatData?.type === 'group'}
-            scrollToMessageId={deepLinkParams?.messageId}
-          />
+          <>
+            <MessageList
+              messages={messages}
+              currentUserId={AuthService.getCurrentUser()?.uid || ''}
+              isLoading={isLoading}
+              isRefreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              onLoadMore={handleLoadMore}
+              onMessagePress={handleMessagePress}
+              onMessageLongPress={handleMessageLongPress}
+              hasMoreMessages={hasMoreMessages}
+              totalParticipants={chatData?.participants.length || 0}
+              isGroupChat={chatData?.type === 'group'}
+              scrollToMessageId={deepLinkParams?.messageId}
+            />
+            
+            {/* AI Suggestions at bottom of chat */}
+            {aiSuggestions.length > 0 && (
+              <View style={styles.aiSuggestionsContainer}>
+                <Text style={styles.aiSuggestionsTitle}>AI Suggestions</Text>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.aiSuggestionsScroll}
+                >
+                  {aiSuggestions.map((suggestion) => (
+                    <View key={suggestion.id} style={styles.aiSuggestionCardWrapper}>
+                      <AISuggestionCard
+                        suggestion={suggestion}
+                        onConfirm={handleSuggestionConfirm}
+                        onReject={handleSuggestionReject}
+                        showSourceContext={false}
+                        onExpand={() => {}}
+                        isExpanded={false}
+                      />
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </>
         )}
 
         {/* Message input */}
@@ -602,6 +679,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  aiSuggestionsContainer: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+  },
+  aiSuggestionsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 8,
+  },
+  aiSuggestionsScroll: {
+    gap: 12,
+  },
+  aiSuggestionCardWrapper: {
+    width: 280,
+    marginRight: 12,
   },
 });
 

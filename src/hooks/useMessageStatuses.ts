@@ -23,14 +23,14 @@ export const useMessageStatuses = (messageIds: string[]) => {
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // EMERGENCY FIX: Add loop detection
-  const renderCount = useRef(0);
-  useEffect(() => {
-    renderCount.current++;
-    if (renderCount.current > 10) {
-      console.error('🚨 INFINITE LOOP DETECTED IN useMessageStatuses - STOPPING');
-      return;
-    }
-  });
+  // const renderCount = useRef(0);
+  // useEffect(() => {
+  //   renderCount.current++;
+  //   if (renderCount.current > 10) {
+  //     console.error('🚨 INFINITE LOOP DETECTED IN useMessageStatuses - STOPPING');
+  //     return;
+  //   }
+  // });
 
   // Debounced status update function
   const debouncedUpdateStatuses = useCallback((newStatuses: { [messageId: string]: MessageStatusType }) => {

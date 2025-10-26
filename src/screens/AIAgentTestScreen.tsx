@@ -7,12 +7,12 @@
 
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useAISuggestions } from '../hooks/useAISuggestions';
@@ -42,7 +42,7 @@ const AIAgentTestScreen: React.FC = () => {
     updateSuggestion,
     getPendingSuggestionsCount,
   } = useAISuggestions({
-    status: AISuggestionStatus.Pending,
+    status: AISuggestionStatus.PENDING,
     enableRealtime: true, // Re-enable for production
   });
 
@@ -186,7 +186,7 @@ const AIAgentTestScreen: React.FC = () => {
     
     // Test update functionality
     const updateResult = await updateSuggestion(testSuggestion.id, {
-      status: AISuggestionStatus.Confirmed,
+      status: AISuggestionStatus.CONFIRMED,
       confirmedAt: new Date(),
     });
 

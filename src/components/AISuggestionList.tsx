@@ -59,7 +59,7 @@ export const AISuggestionList: React.FC<AISuggestionListProps> = ({
       setError(null);
 
       const result = await aiSuggestionService.getSuggestions(userId, {
-        status: AISuggestionStatus.Pending,
+        status: AISuggestionStatus.PENDING,
         limit: maxSuggestions,
         orderBy: 'createdAt',
         orderDirection: 'desc',
@@ -86,7 +86,7 @@ export const AISuggestionList: React.FC<AISuggestionListProps> = ({
   const handleConfirm = async (suggestionId: string) => {
     try {
       const result = await aiSuggestionService.updateSuggestion(suggestionId, {
-        status: AISuggestionStatus.Confirmed,
+        status: AISuggestionStatus.CONFIRMED,
         confirmedAt: new Date(),
       });
 
@@ -105,7 +105,7 @@ export const AISuggestionList: React.FC<AISuggestionListProps> = ({
   const handleReject = async (suggestionId: string) => {
     try {
       const result = await aiSuggestionService.updateSuggestion(suggestionId, {
-        status: AISuggestionStatus.Rejected,
+        status: AISuggestionStatus.REJECTED,
         rejectedAt: new Date(),
       });
 

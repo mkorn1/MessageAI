@@ -32,9 +32,9 @@ class N8nWebhookService {
   }
 
   /**
-   * Fetch last 10 messages from all chats for context
+   * Fetch last 50 messages from all chats for context
    */
-  async fetchLastMessagesForContext(userId: string, limitCount: number = 10): Promise<Result<Message[]>> {
+  async fetchLastMessagesForContext(userId: string, limitCount: number = 50): Promise<Result<Message[]>> {
     try {
       console.log('📚 N8nWebhookService: Fetching last messages for context');
       console.log('👤 User ID:', userId);
@@ -325,12 +325,18 @@ class N8nWebhookService {
   private async sendWithRetry(payload: N8nAnalysisPayload): Promise<N8nActualResponse[]> {
     let lastError: Error | null = null;
 
-    console.log('🔄 Starting sendWithRetry');
-    console.log('📤 Payload:', JSON.stringify(payload, null, 2));
+    console.log('\n🚀 Starting sendWithRetry');
 
     for (let attempt = 1; attempt <= this.config.retryAttempts!; attempt++) {
       try {
-        console.log(`🔄 Attempt ${attempt}/${this.config.retryAttempts} to send webhook`);
+        console.log(`\n🔄 Attempt ${attempt}/${this.config.retryAttempts} to send webhook`);
+        
+        // Log request payload
+        console.log('\n┌─────────────────────────────────────────────────────────┐');
+        console.log('│ 📤 WEBHOOK REQUEST PAYLOAD                              │');
+        console.log('└─────────────────────────────────────────────────────────┘');
+        console.log(JSON.stringify(payload, null, 2));
+        console.log('');
 
         // Create a timeout promise for React Native compatibility
         const timeoutPromise = new Promise((_, reject) => {
@@ -353,11 +359,16 @@ class N8nWebhookService {
         // Race between fetch and timeout
         const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
         
-        console.log('📡 Response received:', {
-          status: response.status,
-          statusText: response.statusText,
-          ok: response.ok
-        });
+        // Enhanced webhook response logging
+        console.log('\n═══════════════════════════════════════════════════════════');
+        console.log('📡 WEBHOOK RESPONSE RECEIVED');
+        console.log('═══════════════════════════════════════════════════════════');
+        console.log('Status Code:', response.status);
+        console.log('Status Text:', response.statusText);
+        console.log('Response OK:', response.ok);
+        console.log('Content-Type:', response.headers.get('content-type'));
+        console.log('Timestamp:', new Date().toISOString());
+        console.log('═══════════════════════════════════════════════════════════\n');
 
         // Handle different HTTP status codes
         if (!response.ok) {
@@ -387,15 +398,28 @@ class N8nWebhookService {
         let responseData: any;
         try {
           const responseText = await response.text();
-          console.log('📄 Raw response text:', responseText);
+          
+          // Log raw response
+          console.log('\n─────────────────────────────────────────────────────────');
+          console.log('📄 RAW WEBHOOK RESPONSE:');
+          console.log('─────────────────────────────────────────────────────────');
+          console.log(responseText);
+          console.log('─────────────────────────────────────────────────────────\n');
           
           if (!responseText.trim()) {
             throw new Error('Empty response from n8n webhook');
           }
           responseData = JSON.parse(responseText);
-          console.log('📊 Parsed response data:', JSON.stringify(responseData, null, 2));
+          
+          // Log parsed response in a formatted way
+          console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log('📊 PARSED WEBHOOK RESPONSE:');
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log(JSON.stringify(responseData, null, 2));
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
         } catch (parseError: any) {
-          console.error('❌ Parse error:', parseError);
+          console.error('\n❌ JSON Parse Error:', parseError);
+          console.error('Raw response text:', responseText);
           throw new Error(`Failed to parse response: ${parseError.message}`);
         }
         
@@ -404,7 +428,10 @@ class N8nWebhookService {
           throw new Error('Invalid response format from n8n webhook');
         }
 
-        console.log(`✅ Webhook request successful on attempt ${attempt}`);
+        console.log('\n✅✅✅ WEBHOOK REQUEST SUCCESSFUL ✅✅✅');
+        console.log(`Success on attempt ${attempt} of ${this.config.retryAttempts}`);
+        console.log(`Received ${responseData.length} suggestion(s)`);
+        console.log('\n');
         return responseData;
 
       } catch (error: any) {

@@ -70,7 +70,7 @@ export const useAISuggestions = (
   options: UseAISuggestionsOptions = {}
 ): UseAISuggestionsReturn => {
   const {
-    status = AISuggestionStatus.Pending,
+    status = AISuggestionStatus.PENDING,
     type,
     chatId,
     limit: limitCount = 50,
@@ -445,7 +445,7 @@ export const useAISuggestions = (
    * Get count of pending suggestions
    */
   const getPendingSuggestionsCount = useCallback((): number => {
-    return suggestions.filter(s => s.status === AISuggestionStatus.Pending).length;
+    return suggestions.filter(s => s.status === AISuggestionStatus.PENDING).length;
   }, [suggestions]);
 
   /**
